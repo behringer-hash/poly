@@ -32,8 +32,9 @@ def read(root: str, stream: str, cols=None) -> pd.DataFrame:
 class PM:
     """Верх книги Up: bid/ask во времени сервера (recv-d) и во времени получения (recv)."""
 
-    def __init__(self, root: str):
-        t = read(root, "pm_top")
+    def __init__(self, root: str | pd.DataFrame):
+        """root - папка с pm_top или уже загруженная таблица pm_top (recv_ms, d, w, o, bid, bid_sz, ask, ask_sz)."""
+        t = read(root, "pm_top") if isinstance(root, str) else root
         t = t[t.o == "U"].copy()
         t["srv"] = t.recv_ms - t.d
         self.by_w = {}

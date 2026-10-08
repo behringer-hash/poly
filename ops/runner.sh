@@ -48,8 +48,11 @@ run_job() {  # run_job <имя> <путь к скрипту>
   out="$RESULTS_DIR/results/$(date -u +%F)/${ts}_${name}"
   mkdir -p "$out"
   log "запуск задания $name"
+  local tmo
+  tmo=$(sed -n 's/^# timeout_min:[[:space:]]*\([0-9]\+\).*/\1/p' "$path" | head -1)
+  tmo=$(( ${tmo:-0} > 0 ? tmo * 60 : JOB_TIMEOUT ))
   ( cd "$REPO_DIR" && OUT_DIR="$out" DATA_DIR="$DATA_DIR" REPO_DIR="$REPO_DIR" PYTHON="$PYTHON" \
-      timeout "$JOB_TIMEOUT" bash "$path" ) >"$out/job.log" 2>&1
+      timeout "$tmo" bash "$path" ) >"$out/job.log" 2>&1
   rc=$?
   echo "$rc" >"$out/exit_code"
   log "задание $name завершено, код $rc"
