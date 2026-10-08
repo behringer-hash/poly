@@ -65,15 +65,15 @@ for label, back in (("1 час назад", 3600), ("1 сутки назад", 8
     start = (now - back) // 300 * 300
     slug = f"btc-updown-5m-{start}"
     L.append(f"\n### {label}: {slug}")
-    r = get("https://gamma-api.polymarket.com/markets", params={"slug": slug})
+    r = get("https://gamma-api.polymarket.com/events", params={"slug": slug})   # так же ищет рынки lab-collector
     if r is None or r.status_code != 200:
         L.append(f"- gamma: {None if r is None else r.status_code}")
         continue
-    ms = r.json()
-    if not ms:
-        L.append("- gamma: рынок не найден")
+    ev = r.json()
+    if not ev or not ev[0].get("markets"):
+        L.append("- gamma: событие не найдено")
         continue
-    m = ms[0]
+    m = ev[0]["markets"][0]
     cond = m.get("conditionId")
     tokens = m.get("clobTokenIds")
     tokens = json.loads(tokens) if isinstance(tokens, str) else tokens
