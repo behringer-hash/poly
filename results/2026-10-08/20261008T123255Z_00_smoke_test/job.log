@@ -1,0 +1,10 @@
+python: Python 3.12.3
+git: 97c85a3
+
+..........                                                               [100%]
+10 passed in 0.09s
+
+--- свободное место и память ---
+/dev/root        58G  6.4G   51G  12% /
+               total        used        free      shared  buff/cache   available
+Mem:            1906         699         149           2        1252        1206
