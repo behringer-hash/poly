@@ -1,0 +1,18 @@
+[Unit]
+Description=BTC5m lab: запись сырых данных (только запись, без торговли)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=lab
+WorkingDirectory=/home/lab/poly/btc5m_lab
+ExecStart=/home/lab/venv/bin/python run.py --no-paper --no-wallet --extra-feeds all --data-dir /home/lab/data
+Restart=always
+RestartSec=10
+# run.py корректно завершается по Ctrl+C (SIGINT): данные успевают сброситься на диск
+KillSignal=SIGINT
+TimeoutStopSec=40
+Nice=5
+
+[Install]
+WantedBy=multi-user.target
