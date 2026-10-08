@@ -89,3 +89,36 @@ def test_summarize_shapes():
     df = execute(collect_signals(pt, t, px, [Params(0.03)]), PM(pt), {W: "Up"}, [50, 300])
     out = summarize(df, n_boot=50)
     assert set(out.L) == {50, 300} and (out.исполн >= 0).all()
+
+
+def _engine_vs_replay(pt, t, px, winners, thr=0.03):
+    """Сигналы настоящего движка paper.py (виртуальное время) и упрощённого реплея должны совпасть."""
+    import paper_replay as pr
+    res = pr.run(None, {"src": (t, px)}, "src", pr.parse_variants(f"v:{thr}:src"), [50, 400], winners, pm_top=pt)
+    eng = res["paper_signals"]
+    mine = collect_signals(pt, t, px, [Params(thr)])
+    a = sorted((round(r.recv * 1000), 1 if r.outcome == "Up" else -1) for r in eng.itertuples())
+    b = sorted((round(s["t"]), s["sgn"]) for s in mine)
+    return a, b, res
+
+
+def test_real_engine_matches_replay_signals_and_fills():
+    t_jump = T0 + 100_000
+    pt = top([(T0 + 10_000, 20, .49, .51, 100, 100), (t_jump - 300, 20, .49, .51, 100, 90),   # свежая книга (движок: не старше 2 с)
+              (t_jump + 200, 20, .58, .60, 100, 100)])
+    t, px = ticks(t_jump, jump=15.0)
+    a, b, res = _engine_vs_replay(pt, t, px, {W: "Up"})
+    assert a == b and a                                   # те же сигналы в те же миллисекунды
+    fl = res["paper_fills"].set_index("latency_ms")
+    assert fl.loc[50, "status"] == "fill" and fl.loc[400, "status"] == "miss"
+    # движок проверяет исполнение по локальной копии книги (view="rcv"), реплей с view="rcv" даёт то же
+    df = execute(collect_signals(pt, t, px, [Params(0.03)]), PM(pt), {W: "Up"}, [50, 400], view="rcv")
+    assert list(df.sort_values("L").fill) == [True, False]
+
+
+def test_book_lag_filter_matches_engine():
+    t_jump = T0 + 100_000
+    pt = top([(T0 + 10_000, 20, .49, .51, 100, 100), (t_jump - 500, 900, .49, .51, 100, 100)])   # лаг ленты 900 мс
+    t, px = ticks(t_jump, jump=15.0)
+    a, b, _ = _engine_vs_replay(pt, t, px, {W: "Up"})
+    assert a == b == []                                   # по отставшей книге не торгуем ни движок, ни реплей

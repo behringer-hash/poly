@@ -40,9 +40,54 @@ class Params:
         return f"thr{self.thr:g}_s{self.sigma_mult:g}_slip{self.slip_c:g}"
 
 
+def _levels(s) -> list[tuple[float, float]]:
+    if not isinstance(s, str) or not s:
+        return []
+    return [(float(a), float(b)) for a, b in (x.split(":") for x in s.split("|"))]
+
+
+def bybit_mid(root: str) -> tuple[np.ndarray, np.ndarray]:
+    """Цена Bybit как в живом боте (pm.bybit_lite): середина лучших bid/ask из orderbook.1 (поток by_book1,
+    снимки и дельты), а если верх книги неизвестен или перекрещен - цена последней сделки (by_trade)."""
+    bk = read(root, "by_book1", ["recv_ms", "type", "bids", "asks"])
+    tr = read(root, "by_trade", ["recv_ms", "price"])
+    ev = [(t, 0, ty, b, a) for t, ty, b, a in zip(bk.recv_ms, bk.type, bk.bids, bk.asks)] if len(bk) else []
+    ev += [(t, 1, p, None, None) for t, p in zip(tr.recv_ms, tr.price)] if len(tr) else []
+    ev.sort(key=lambda e: (e[0], e[1]))
+    bid = ask = trade_px = last = None
+    ts, pxs = [], []
+    for t, kind, x, b, a in ev:
+        if kind == 1:
+            trade_px = float(x)
+        else:
+            snap = x == "s"
+            for side, raw in (("b", b), ("a", a)):
+                lv = _levels(raw)
+                live = [p for p, q in lv if q > 0]
+                gone = {p for p, q in lv if q == 0}
+                cur = bid if side == "b" else ask
+                if live:
+                    cur = max(live) if side == "b" else min(live)
+                elif snap or (cur is not None and cur in gone):
+                    cur = None
+                if side == "b":
+                    bid = cur
+                else:
+                    ask = cur
+        px = (bid + ask) / 2 if bid is not None and ask is not None and ask > bid else trade_px
+        if px is None or px == last:
+            continue
+        last = px
+        ts.append(float(t))
+        pxs.append(px)
+    return np.array(ts), np.array(pxs)
+
+
 def load_source(root: str, name: str) -> tuple[np.ndarray, np.ndarray]:
     """Тики источника цены BTC: (recv_ms, цена), отсортированы по времени получения."""
     if name == "bybit":
+        return bybit_mid(root)
+    if name == "bybit_trade":
         d = read(root, "by_trade", ["recv_ms", "price"])
     elif name == "binance_fut":
         d = read(root, "bnf_agg", ["recv_ms", "price"])
@@ -64,12 +109,13 @@ def load_source(root: str, name: str) -> tuple[np.ndarray, np.ndarray]:
 
 
 def collect_signals(pm_top: pd.DataFrame, src_t: np.ndarray, src_px: np.ndarray, params: list[Params], *,
-                    max_age_ms: float = 1500, min_T: float = 5, min_elapsed: float = 3,
+                    max_age_ms: float = 1000, max_book_lag_ms: float = 400, min_T: float = 5, min_elapsed: float = 3,
                     lo: float = 0.05, hi: float = 0.95) -> list[dict]:
     """Проходит по событиям (изменения цен Up и тики источника) в порядке получения и собирает сигналы."""
     u = pm_top[pm_top.o == "U"].sort_values("recv_ms", kind="stable")
     pt, pw = u.recv_ms.values.astype(float), u.w.values.astype(np.int64)
     pbid, pask = u.bid.values.astype(float), u.ask.values.astype(float)
+    pd_ = u.d.values.astype(float)
     times = np.concatenate([pt, src_t])
     kind = np.concatenate([np.zeros(len(pt), np.int8), np.ones(len(src_t), np.int8)])
     order = np.argsort(times, kind="stable")
@@ -78,6 +124,7 @@ def collect_signals(pm_top: pd.DataFrame, src_t: np.ndarray, src_px: np.ndarray,
     last_sig: dict[tuple, float] = {}
     inv_cache: dict[float, float] = {}
     bid = ask = mid = np.nan
+    cur_d = 0.0
     w_cur = -1
     anchor = None
     last_px = last_ts = None
@@ -87,7 +134,7 @@ def collect_signals(pm_top: pd.DataFrame, src_t: np.ndarray, src_px: np.ndarray,
         if anchor is None or last_px is None or not (np.isfinite(bid) and np.isfinite(ask)):
             return
         w = int(t // 1000 // WINDOW * WINDOW)
-        if w != w_cur or t - last_ts > max_age_ms:
+        if w != w_cur or t - last_ts > max_age_ms or cur_d > max_book_lag_ms:   # лаг книги: как в движке, по такой книге не торгуем
             return
         T = w + WINDOW - t / 1000
         if T < min_T or t / 1000 - w < min_elapsed:
@@ -130,6 +177,7 @@ def collect_signals(pm_top: pd.DataFrame, src_t: np.ndarray, src_px: np.ndarray,
         moved = pbid[j] != bid and not (np.isnan(pbid[j]) and np.isnan(bid)) or \
             pask[j] != ask and not (np.isnan(pask[j]) and np.isnan(ask))
         bid, ask = pbid[j], pask[j]
+        cur_d = pd_[j]
         if np.isfinite(bid) and np.isfinite(ask):
             new_mid = (bid + ask) / 2
             if new_mid != mid:
@@ -142,16 +190,17 @@ def collect_signals(pm_top: pd.DataFrame, src_t: np.ndarray, src_px: np.ndarray,
 
 
 def execute(sigs: list[dict], pm: PM, winners: dict[int, str], latencies: list[int], *, hold_s: float = 5,
-            clip: float = 5, min_fill: float = 5, match_slip: bool = True) -> pd.DataFrame:
-    """Исполнение сигналов с задержками: цена и объём берутся из состояния сервера на момент матча."""
+            clip: float = 5, min_fill: float = 5, view: str = "srv") -> pd.DataFrame:
+    """Исполнение сигналов с задержками. view="srv" - состояние книги на сервере Polymarket в момент матча (реально);
+    view="rcv" - то, что к этому моменту дошло до нас (так проверяет исполнение бумажный движок, оптимистично)."""
     rows = []
     for s in sigs:
         p, w, sgn, t = s["p"], s["w"], s["sgn"], s["t"]
         limit = round(s["view"] + p.slip_c / 100, 4)
         win = winners.get(w)
         for L in latencies:
-            m = pm.state(w, t + L, "srv")
-            e = pm.state(w, t + L + hold_s * 1000, "srv")
+            m = pm.state(w, t + L, view)
+            e = pm.state(w, t + L + hold_s * 1000, view)
             fill, px, qty = False, np.nan, 0.0
             if m is not None:
                 if sgn > 0:
@@ -195,12 +244,14 @@ def summarize(df: pd.DataFrame, clip: float = 5, n_boot: int = 1500, seed: int =
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("roots", nargs="+", help="папки с данными (по одной на день или одна на всё)")
-    ap.add_argument("--source", default="binance_fut", help="bybit | coinbase | binance_fut | binance | bitstamp | rtds")
+    ap.add_argument("--source", default="binance_fut", help="bybit (середина книги, как в боте) | bybit_trade | coinbase | binance_fut | binance | bitstamp | rtds")
     ap.add_argument("--latencies", default="150,300,450,600")
     ap.add_argument("--thr", default="0.01,0.02,0.03,0.05")
     ap.add_argument("--sigma-mult", default="0.75,1,1.5")
     ap.add_argument("--slip-c", default="0,3")
     ap.add_argument("--hold-s", type=float, default=5)
+    ap.add_argument("--view", default="srv", choices=["srv", "rcv"],
+                    help="srv - книга на сервере в момент матча (реально); rcv - как проверяет бумажный движок (оптимистично)")
     a = ap.parse_args()
     pd.set_option("display.width", 250)
     params = [Params(float(t), float(s), float(sl)) for t, s, sl in itertools.product(
@@ -213,7 +264,7 @@ def main():
         winners = dict(zip(wn.start.astype(int), wn.official_winner))
         t, px = load_source(root, a.source)
         sigs = collect_signals(pm_top, t, px, params)
-        res.append(execute(sigs, PM(pm_top), winners, lat, hold_s=a.hold_s))
+        res.append(execute(sigs, PM(pm_top), winners, lat, hold_s=a.hold_s, view=a.view))
         print(f"{root}: тиков {len(t)}, сигналов {len(sigs)}")
     print(summarize(pd.concat(res, ignore_index=True)).to_string(index=False))
 
