@@ -1,0 +1,5 @@
+websockets>=13
+orjson>=3.9
+requests>=2.31
+pandas>=2.0
+py_clob_client_v2>=1.1  # только для живого теста

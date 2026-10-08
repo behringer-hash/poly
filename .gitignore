@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+# данные и секреты не коммитим
+data/
+bot_data*/
+*.csv
+*.csv.xz
+*.log
+live_config.json
+live_config_*.json
+!live_config.example.json
+STOP
+probe_*.json
