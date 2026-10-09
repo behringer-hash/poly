@@ -1,0 +1,47 @@
+# Проверка доступной истории
+
+UTC: 2026-10-09 06:47:18
+
+## Дампы бирж по дням (HEAD: код ответа и размер файла)
+| источник | 2026-10-07 | 2026-10-02 | 2026-09-09 | 2026-07-11 |
+|---|---|---|---|---|
+| Binance futures aggTrades | 200, 15 МБ | 200, 21 МБ | 200, 15 МБ | 200, 6 МБ |
+| Binance futures bookTicker | 404 | 404 | 404 | 404 |
+| Binance futures bookDepth | 200, 0 МБ | 200, 1 МБ | 200, 1 МБ | 200, 1 МБ |
+| Binance spot aggTrades | 200, 36 МБ | 200, 16 МБ | 200, 13 МБ | 200, 7 МБ |
+| Binance spot trades | 200, 40 МБ | 200, 29 МБ | 200, 23 МБ | 200, 11 МБ |
+| Bybit trades | 200, 53 МБ | 200, 72 МБ | 200, 69 МБ | 200, 24 МБ |
+
+## Polymarket: исторические данные по рынкам BTC 5m
+
+### 1 час назад: btc-updown-5m-1791524700
+- gamma: найден, closed=True, volume=None, conditionId=0x11f0035d900d…
+- data-api trades: 500 сделок за один запрос; поля: ['asset', 'bio', 'conditionId', 'eventSlug', 'icon', 'name', 'outcome', 'outcomeIndex', 'price', 'profileImage', 'profileImageOptimized', 'proxyWallet', 'pseudonym', 'side', 'size', 'slug', 'timestamp', 'title', 'transactionHash']; timestamp 1791524853…1791524958 (разрешение — секунды)
+- prices-history (fidelity=1): 5 точек за 5 минут; пример: [{"t": 1791524715, "p": 0.525}, {"t": 1791524777, "p": 0.405}, {"t": 1791524836, "p": 0.265}]
+- clob /book (стакан сейчас): 404 {"error":"No orderbook exists for the requested token id"}
+
+
+### 1 сутки назад: btc-updown-5m-1791441900
+- gamma: найден, closed=True, volume=24356.954993999996, conditionId=0xc1470f0ed95e…
+- data-api trades: 500 сделок за один запрос; поля: ['asset', 'bio', 'conditionId', 'eventSlug', 'icon', 'name', 'outcome', 'outcomeIndex', 'price', 'profileImage', 'profileImageOptimized', 'proxyWallet', 'pseudonym', 'side', 'size', 'slug', 'timestamp', 'title', 'transactionHash']; timestamp 1791442087…1791442285 (разрешение — секунды)
+- prices-history (fidelity=1): 5 точек за 5 минут; пример: [{"t": 1791441914, "p": 0.445}, {"t": 1791441979, "p": 0.835}, {"t": 1791442033, "p": 0.885}]
+- clob /book (стакан сейчас): 404 {"error":"No orderbook exists for the requested token id"}
+
+
+### 7 суток назад: btc-updown-5m-1790923500
+- gamma: найден, closed=True, volume=48278.39199900003, conditionId=0xcc705e1d00fb…
+- data-api trades: 500 сделок за один запрос; поля: ['asset', 'bio', 'conditionId', 'eventSlug', 'icon', 'name', 'outcome', 'outcomeIndex', 'price', 'profileImage', 'profileImageOptimized', 'proxyWallet', 'pseudonym', 'side', 'size', 'slug', 'timestamp', 'title', 'transactionHash']; timestamp 1790923796…1790923850 (разрешение — секунды)
+- prices-history (fidelity=1): 5 точек за 5 минут; пример: [{"t": 1790923513, "p": 0.515}, {"t": 1790923576, "p": 0.285}, {"t": 1790923646, "p": 0.215}]
+- clob /book (стакан сейчас): 404 {"error":"No orderbook exists for the requested token id"}
+
+
+### 30 суток назад: btc-updown-5m-1788936300
+- gamma: найден, closed=True, volume=35130.55511599998, conditionId=0x6d0b7a718dd6…
+- data-api trades: 500 сделок за один запрос; поля: ['asset', 'bio', 'conditionId', 'eventSlug', 'icon', 'name', 'outcome', 'outcomeIndex', 'price', 'profileImage', 'profileImageOptimized', 'proxyWallet', 'pseudonym', 'side', 'size', 'slug', 'timestamp', 'title', 'transactionHash']; timestamp 1788936522…1788936721 (разрешение — секунды)
+- prices-history (fidelity=1): 5 точек за 5 минут; пример: [{"t": 1788936310, "p": 0.595}, {"t": 1788936374, "p": 0.335}, {"t": 1788936436, "p": 0.395}]
+- clob /book (стакан сейчас): 404 {"error":"No orderbook exists for the requested token id"}
+
+
+## Вывод для чтения человеком
+- Если дампы Binance/Bybit доступны, историю цен BTC можно получить за любой день.
+- Если у Polymarket доступны только сделки (секунды) и prices-history (минимум 1 минута), то стакан с точностью до миллисекунд задним числом получить нельзя — его надо записывать (это делает lab-collector).
