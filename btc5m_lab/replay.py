@@ -190,9 +190,12 @@ def collect_signals(pm_top: pd.DataFrame, src_t: np.ndarray, src_px: np.ndarray,
 
 
 def execute(sigs: list[dict], pm: PM, winners: dict[int, str], latencies: list[int], *, hold_s: float = 5,
-            clip: float = 5, min_fill: float = 5, view: str = "srv") -> pd.DataFrame:
+            clip: float = 5, min_fill: float = 5, view: str = "srv", exit_s: tuple = (), exit_ms: float = 205
+            ) -> pd.DataFrame:
     """Исполнение сигналов с задержками. view="srv" - состояние книги на сервере Polymarket в момент матча (реально);
-    view="rcv" - то, что к этому моменту дошло до нас (так проверяет исполнение бумажный движок, оптимистично)."""
+    view="rcv" - то, что к этому моменту дошло до нас (так проверяет исполнение бумажный движок, оптимистично).
+    exit_s - моменты досрочного выхода (секунды после матча входа): продажа тейкером по bid сервера через exit_ms
+    после решения о выходе, с комиссией на выходе; если bid пуст или объёма мало - держим до экспирации."""
     rows = []
     for s in sigs:
         p, w, sgn, t = s["p"], s["w"], s["sgn"], s["t"]
@@ -210,6 +213,7 @@ def execute(sigs: list[dict], pm: PM, winners: dict[int, str], latencies: list[i
                 if np.isfinite(px) and np.isfinite(size) and px <= limit + 1e-9 and min(clip, size) >= min_fill - 1e-9:
                     fill, qty = True, min(clip, size)
             mk = settle = np.nan
+            xs = {f"x{h:g}": np.nan for h in exit_s}
             if fill:
                 fee = FEE * px * (1 - px)
                 if e is not None and np.isfinite(e[0]) and np.isfinite(e[1]):
@@ -217,8 +221,17 @@ def execute(sigs: list[dict], pm: PM, winners: dict[int, str], latencies: list[i
                     mk = ((em if sgn > 0 else 1 - em) - px - fee) * 100
                 if win is not None:
                     settle = ((1.0 if (win == "Up") == (sgn > 0) else 0.0) - px - fee) * 100
+                for h in exit_s:
+                    x = pm.state(w, t + L + h * 1000 + exit_ms, view)
+                    bid_t = bsz_t = np.nan
+                    if x is not None:
+                        bid_t, bsz_t = (x[0], x[2]) if sgn > 0 else ((1 - x[1]) if np.isfinite(x[1]) else np.nan, x[3])
+                    if np.isfinite(bid_t) and np.isfinite(bsz_t) and bsz_t >= qty:
+                        xs[f"x{h:g}"] = (bid_t - px - fee - FEE * bid_t * (1 - bid_t)) * 100
+                    else:
+                        xs[f"x{h:g}"] = settle                # выйти нечем - держим до экспирации
             rows.append(dict(variant=p.name, L=L, w=w, day=int(w // 86400), fill=fill, px=px, qty=qty, mk=mk,
-                             settle=settle))
+                             settle=settle, **xs))
     return pd.DataFrame(rows)
 
 
@@ -241,6 +254,25 @@ def summarize(df: pd.DataFrame, clip: float = 5, n_boot: int = 1500, seed: int =
     return pd.DataFrame(out)
 
 
+def summarize_exit(df: pd.DataFrame, exit_s, clip: float = 5, n_boot: int = 1500, seed: int = 0) -> pd.DataFrame:
+    """ц на «шейр попытки» для стратегии «вход - досрочный выход через h секунд» (неисполненные ордера = 0)."""
+    rng = np.random.default_rng(seed)
+    out = []
+    for (v, L), d in df.groupby(["variant", "L"]):
+        for h in exit_s:
+            col = f"x{h:g}"
+            ok = d.fill & d[col].notna()
+            pnl = np.where(ok, d[col].fillna(0) * d.qty / clip, 0.0)
+            g = pd.DataFrame({"w": d.w.values, "v": pnl}).groupby("w").v.agg(["sum", "size"])
+            idx = rng.integers(0, len(g), (n_boot, len(g)))
+            bs = g["sum"].values[idx].sum(1) / g["size"].values[idx].sum(1)
+            out.append(dict(вариант=v, L=L, выход_с=h, сигн=len(d), окон=d.w.nunique(), исполн=round(d.fill.mean(), 3),
+                            цшейр_исп=round(d.loc[ok, col].mean(), 2) if ok.any() else np.nan,
+                            цсигнал=round(pnl.mean(), 2), ИИ_низ=round(np.percentile(bs, 2.5), 2),
+                            ИИ_верх=round(np.percentile(bs, 97.5), 2)))
+    return pd.DataFrame(out)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("roots", nargs="+", help="папки с данными (по одной на день или одна на всё)")
@@ -252,8 +284,10 @@ def main():
     ap.add_argument("--hold-s", type=float, default=5)
     ap.add_argument("--view", default="srv", choices=["srv", "rcv"],
                     help="srv - книга на сервере в момент матча (реально); rcv - как проверяет бумажный движок (оптимистично)")
+    ap.add_argument("--exit-s", default="", help="досрочный выход через N секунд после входа, через запятую (2,5,10,30,60)")
     a = ap.parse_args()
     pd.set_option("display.width", 250)
+    exit_s = tuple(float(x) for x in a.exit_s.split(",") if x)
     params = [Params(float(t), float(s), float(sl)) for t, s, sl in itertools.product(
         a.thr.split(","), a.sigma_mult.split(","), a.slip_c.split(","))]
     lat = [int(x) for x in a.latencies.split(",")]
@@ -264,9 +298,28 @@ def main():
         winners = dict(zip(wn.start.astype(int), wn.official_winner))
         t, px = load_source(root, a.source)
         sigs = collect_signals(pm_top, t, px, params)
-        res.append(execute(sigs, PM(pm_top), winners, lat, hold_s=a.hold_s, view=a.view))
+        res.append(execute(sigs, PM(pm_top), winners, lat, hold_s=a.hold_s, view=a.view, exit_s=exit_s))
         print(f"{root}: тиков {len(t)}, сигналов {len(sigs)}")
-    print(summarize(pd.concat(res, ignore_index=True)).to_string(index=False))
+    allr = pd.concat(res, ignore_index=True)
+    print(summarize(allr).to_string(index=False))
+    if exit_s:
+        ex = summarize_exit(allr, exit_s)
+        print("\n=== досрочный выход (продажа по bid с комиссией), топ-30 по нижней границе ИИ ===")
+        print(ex.sort_values("ИИ_низ", ascending=False).head(30).to_string(index=False))
+        print(f"\nстрок с ИИ_низ > 0: {int((ex.ИИ_низ > 0).sum())} из {len(ex)}  (при {len(ex)} сравнениях часть таких строк случайна)")
+        # проверка на отложенной выборке: варианты выбираем по первой половине окон, оцениваем на второй
+        cut = sorted(allr.w.unique())[len(allr.w.unique()) // 2]
+        tr = summarize_exit(allr[allr.w < cut], exit_s, n_boot=500).set_index(["вариант", "L", "выход_с"])
+        te = summarize_exit(allr[allr.w >= cut], exit_s, n_boot=500).set_index(["вариант", "L", "выход_с"])
+        j = tr[["окон", "исполн", "цсигнал", "ИИ_низ"]].join(te[["окон", "исполн", "цсигнал", "ИИ_низ", "ИИ_верх"]],
+                                                             lsuffix="_обуч", rsuffix="_тест")
+        top = j.sort_values("цсигнал_обуч", ascending=False).head(15)
+        print("\n=== отложенная выборка: топ-15 по первой половине окон, результат на второй ===")
+        print(top.round(2).to_string())
+        print(f"\nвсе {len(j)} вариантов: средний цсигнал обуч {j.цсигнал_обуч.mean():.2f}, тест {j.цсигнал_тест.mean():.2f}; "
+              f"у топ-15 по обуч.: тест {top.цсигнал_тест.mean():.2f}")
+        print("\n=== средний цсигнал по выходу и задержке (все варианты) ===")
+        print(ex.pivot_table(index="выход_с", columns="L", values="цсигнал", aggfunc="mean").round(2).to_string())
 
 
 if __name__ == "__main__":

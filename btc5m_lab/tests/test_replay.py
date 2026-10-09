@@ -122,3 +122,19 @@ def test_book_lag_filter_matches_engine():
     t, px = ticks(t_jump, jump=15.0)
     a, b, _ = _engine_vs_replay(pt, t, px, {W: "Up"})
     assert a == b == []                                   # по отставшей книге не торгуем ни движок, ни реплей
+
+
+def test_early_exit_sells_at_bid_with_fees():
+    t_jump = T0 + 100_000
+    # после скачка ask остаётся 0.51, а через 3 с книга переоценивается: bid 0.70 / ask 0.72
+    pt = top([(T0 + 10_000, 20, .49, .51, 100, 100), (t_jump + 3_000, 20, .70, .72, 100, 100)])
+    t, px = ticks(t_jump, jump=15.0)
+    sigs = collect_signals(pt, t, px, [Params(0.03)])
+    df = execute(sigs, PM(pt), {W: "Up"}, [50], exit_s=(1, 5), exit_ms=200)
+    r = df.iloc[0]
+    assert r.fill and r.px == pytest.approx(0.51)
+    fee_in, fee_out = 0.07 * .51 * .49, 0.07 * .70 * .30
+    assert r["x5"] == pytest.approx((0.70 - 0.51 - fee_in - fee_out) * 100)    # продали по bid 0.70
+    assert r["x1"] < r["x5"]                                                    # через 1 с переоценки ещё нет
+    from replay import summarize_exit
+    assert not summarize_exit(df, (1, 5), n_boot=20).empty
