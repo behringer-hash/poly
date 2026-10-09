@@ -284,6 +284,7 @@ def main():
     ap.add_argument("--hold-s", type=float, default=5)
     ap.add_argument("--view", default="srv", choices=["srv", "rcv"],
                     help="srv - книга на сервере в момент матча (реально); rcv - как проверяет бумажный движок (оптимистично)")
+    ap.add_argument("--since", type=float, default=0, help="учитывать только окна с началом не раньше этого времени (epoch, с): честная проверка вперёд")
     ap.add_argument("--exit-s", default="", help="досрочный выход через N секунд после входа, через запятую (2,5,10,30,60)")
     a = ap.parse_args()
     pd.set_option("display.width", 250)
@@ -301,6 +302,11 @@ def main():
         res.append(execute(sigs, PM(pm_top), winners, lat, hold_s=a.hold_s, view=a.view, exit_s=exit_s))
         print(f"{root}: тиков {len(t)}, сигналов {len(sigs)}")
     allr = pd.concat(res, ignore_index=True)
+    if a.since:
+        allr = allr[allr.w >= a.since]
+    if allr.empty:
+        print("нет сигналов в окнах после --since")
+        return
     print(summarize(allr).to_string(index=False))
     if exit_s:
         ex = summarize_exit(allr, exit_s)
@@ -308,6 +314,8 @@ def main():
         print(ex.sort_values("ИИ_низ", ascending=False).head(30).to_string(index=False))
         print(f"\nстрок с ИИ_низ > 0: {int((ex.ИИ_низ > 0).sum())} из {len(ex)}  (при {len(ex)} сравнениях часть таких строк случайна)")
         # проверка на отложенной выборке: варианты выбираем по первой половине окон, оцениваем на второй
+        if allr.w.nunique() < 20:
+            return
         cut = sorted(allr.w.unique())[len(allr.w.unique()) // 2]
         tr = summarize_exit(allr[allr.w < cut], exit_s, n_boot=500).set_index(["вариант", "L", "выход_с"])
         te = summarize_exit(allr[allr.w >= cut], exit_s, n_boot=500).set_index(["вариант", "L", "выход_с"])
