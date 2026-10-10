@@ -138,3 +138,11 @@ def test_early_exit_sells_at_bid_with_fees():
     assert r["x1"] < r["x5"]                                                    # через 1 с переоценки ещё нет
     from replay import summarize_exit
     assert not summarize_exit(df, (1, 5), n_boot=20).empty
+
+
+def test_read_skips_empty_files(tmp_path):
+    from lead_lag import read
+    (tmp_path / "windows_00.csv").write_text("")                              # свежесозданный пустой файл
+    (tmp_path / "windows_01.csv").write_text("slug,start\na,1\n")
+    assert list(read(str(tmp_path), "windows").slug) == ["a"]
+    assert read(str(tmp_path), "nothing").empty

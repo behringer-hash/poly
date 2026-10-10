@@ -266,10 +266,13 @@ def summarize_exit(df: pd.DataFrame, exit_s, clip: float = 5, n_boot: int = 1500
             g = pd.DataFrame({"w": d.w.values, "v": pnl}).groupby("w").v.agg(["sum", "size"])
             idx = rng.integers(0, len(g), (n_boot, len(g)))
             bs = g["sum"].values[idx].sum(1) / g["size"].values[idx].sum(1)
-            out.append(dict(вариант=v, L=L, выход_с=h, сигн=len(d), окон=d.w.nunique(), исполн=round(d.fill.mean(), 3),
+            per_day = pd.Series(pnl, index=d.index).groupby(d.day).mean()
+            out.append(dict(вариант=v, L=L, выход_с=h, сигн=len(d), окон=d.w.nunique(), исп_шт=int(ok.sum()),
+                            исполн=round(d.fill.mean(), 3),
                             цшейр_исп=round(d.loc[ok, col].mean(), 2) if ok.any() else np.nan,
                             цсигнал=round(pnl.mean(), 2), ИИ_низ=round(np.percentile(bs, 2.5), 2),
-                            ИИ_верх=round(np.percentile(bs, 97.5), 2)))
+                            ИИ_верх=round(np.percentile(bs, 97.5), 2),
+                            дни=" ".join(f"{x:+.1f}" for x in per_day.values)))
     return pd.DataFrame(out)
 
 

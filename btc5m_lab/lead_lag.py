@@ -26,7 +26,13 @@ def read(root: str, stream: str, cols=None) -> pd.DataFrame:
     fs = sorted(glob.glob(os.path.join(root, f"{stream}_*.csv*")))
     if not fs:
         return pd.DataFrame()
-    return pd.concat([pd.read_csv(f, usecols=cols, low_memory=False) for f in fs], ignore_index=True)
+    dfs = []
+    for f in fs:
+        try:
+            dfs.append(pd.read_csv(f, usecols=cols, low_memory=False))
+        except pd.errors.EmptyDataError:      # файл только что создан (начало часа/суток) и ещё пуст
+            continue
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
 
 class PM:
