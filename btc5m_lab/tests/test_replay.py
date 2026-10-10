@@ -146,3 +146,23 @@ def test_read_skips_empty_files(tmp_path):
     (tmp_path / "windows_01.csv").write_text("slug,start\na,1\n")
     assert list(read(str(tmp_path), "windows").slug) == ["a"]
     assert read(str(tmp_path), "nothing").empty
+
+
+def test_overpay_modes_buy_more_levels_of_price():
+    from replay import parse_slips, slip_extra_c, slip_label
+    t_jump = T0 + 100_000
+    # ask 0.51 уходит на 0.55 через 200 мс: без переплаты - промах, с переплатой 5 ц - покупка по 0.55
+    pt = top([(T0 + 10_000, 20, .49, .51, 100, 100), (t_jump + 200, 20, .53, .55, 100, 100)])
+    t, px = ticks(t_jump, jump=15.0)
+    sigs = collect_signals(pt, t, px, [Params(0.03)])
+    sl = parse_slips("0,5,e:1:1:8")
+    assert [slip_label(x) for x in sl] == ["slip0", "slip5", "edge1m1c8"]
+    df = execute(sigs, PM(pt), {W: "Up"}, [400], slips=sl, exit_s=(5,))
+    by = df.groupby("slip").fill.max()
+    assert not by["slip0"] and by["slip5"]
+    assert df[df.slip == "slip5"].iloc[0].px == pytest.approx(0.55)
+    # переплата от силы сигнала: edge 0.097 -> floor(9.7*1 - 1) = 8 ц, но не больше потолка
+    assert slip_extra_c(("edge", 1.0, 1.0, 8.0), 0.097) == 8
+    assert slip_extra_c(("edge", 1.0, 1.0, 8.0), 0.015) == 0
+    from replay import slip_report
+    assert not slip_report(df, (5,)).empty

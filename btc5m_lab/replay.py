@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import itertools
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -36,8 +37,36 @@ class Params:
     cooldown_s: float = 1.0
 
     @property
+    def base(self) -> str:
+        return f"thr{self.thr:g}_s{self.sigma_mult:g}"
+
+    @property
     def name(self) -> str:
-        return f"thr{self.thr:g}_s{self.sigma_mult:g}_slip{self.slip_c:g}"
+        return f"{self.base}_slip{self.slip_c:g}"
+
+
+def parse_slips(spec: str) -> list[tuple]:
+    """'0,1,2,e:1:1:8' -> фиксированная переплата в центах или от силы сигнала: e:масштаб:запас_ц:потолок_ц
+    (переплата = floor(edge_ц * масштаб - запас), от 0 до потолка)."""
+    out = []
+    for item in spec.split(","):
+        item = item.strip()
+        if item.startswith("e:"):
+            _, sc, mg, cap = item.split(":")
+            out.append(("edge", float(sc), float(mg), float(cap)))
+        elif item:
+            out.append(("fixed", float(item)))
+    return out
+
+
+def slip_label(sl: tuple) -> str:
+    return f"slip{sl[1]:g}" if sl[0] == "fixed" else f"edge{sl[1]:g}m{sl[2]:g}c{sl[3]:g}"
+
+
+def slip_extra_c(sl: tuple, edge: float) -> float:
+    if sl[0] == "fixed":
+        return sl[1]
+    return float(min(sl[3], max(0.0, math.floor(edge * 100 * sl[1] - sl[2]))))
 
 
 def _levels(s) -> list[tuple[float, float]]:
@@ -190,16 +219,23 @@ def collect_signals(pm_top: pd.DataFrame, src_t: np.ndarray, src_px: np.ndarray,
 
 
 def execute(sigs: list[dict], pm: PM, winners: dict[int, str], latencies: list[int], *, hold_s: float = 5,
-            clip: float = 5, min_fill: float = 5, view: str = "srv", exit_s: tuple = (), exit_ms: float = 205
-            ) -> pd.DataFrame:
+            clip: float = 5, min_fill: float = 5, view: str = "srv", exit_s: tuple = (), exit_ms: float = 205,
+            slips: list | None = None) -> pd.DataFrame:
     """Исполнение сигналов с задержками. view="srv" - состояние книги на сервере Polymarket в момент матча (реально);
     view="rcv" - то, что к этому моменту дошло до нас (так проверяет исполнение бумажный движок, оптимистично).
     exit_s - моменты досрочного выхода (секунды после матча входа): продажа тейкером по bid сервера через exit_ms
-    после решения о выходе, с комиссией на выходе; если bid пуст или объёма мало - держим до экспирации."""
+    после решения о выходе, с комиссией на выходе; если bid пуст или объёма мало - держим до экспирации.
+    slips - список способов переплаты (см. parse_slips): каждый даёт отдельный вариант; без него берётся p.slip_c.
+    Исполнение - только по верхнему уровню стакана (при переплате живой ордер мог бы забрать и следующие уровни)."""
     rows = []
-    for s in sigs:
+    for s, sl in ((s, sl) for s in sigs for sl in (slips or [None])):
         p, w, sgn, t = s["p"], s["w"], s["sgn"], s["t"]
-        limit = round(s["view"] + p.slip_c / 100, 4)
+        if sl is None:
+            limit, label, slip_name = round(s["view"] + p.slip_c / 100, 4), p.name, f"slip{p.slip_c:g}"
+        else:
+            limit = round(s["view"] + slip_extra_c(sl, s["edge"]) / 100, 4)
+            slip_name = slip_label(sl)
+            label = f"{p.base}_{slip_name}"
         win = winners.get(w)
         for L in latencies:
             m = pm.state(w, t + L, view)
@@ -230,8 +266,8 @@ def execute(sigs: list[dict], pm: PM, winners: dict[int, str], latencies: list[i
                         xs[f"x{h:g}"] = (bid_t - px - fee - FEE * bid_t * (1 - bid_t)) * 100
                     else:
                         xs[f"x{h:g}"] = settle                # выйти нечем - держим до экспирации
-            rows.append(dict(variant=p.name, L=L, w=w, day=int(w // 86400), fill=fill, px=px, qty=qty, mk=mk,
-                             settle=settle, **xs))
+            rows.append(dict(variant=label, base=p.base, slip=slip_name, L=L, w=w, day=int(w // 86400), fill=fill,
+                             px=px, qty=qty, mk=mk, settle=settle, **xs))
     return pd.DataFrame(rows)
 
 
@@ -276,6 +312,17 @@ def summarize_exit(df: pd.DataFrame, exit_s, clip: float = 5, n_boot: int = 1500
     return pd.DataFrame(out)
 
 
+def slip_report(allr: pd.DataFrame, exit_s, h: float = 5.0) -> pd.DataFrame:
+    """Сравнение способов переплаты: главное - ц на сигнал (неисполненные = 0), то есть полезность самого решения
+    «входить с такой переплатой», а не прибыль на один купленный шейр."""
+    hold = summarize(allr, n_boot=1000).rename(columns={"цсигнал": "держать", "ИИ_низ": "д_ИИ-", "ИИ_верх": "д_ИИ+"})
+    ex = summarize_exit(allr, (h,), n_boot=1000).rename(columns={"цсигнал": f"выход{h:g}с", "ИИ_низ": "в_ИИ-", "ИИ_верх": "в_ИИ+"})
+    m = hold[["вариант", "L", "сигн", "исполн", "держать", "д_ИИ-", "д_ИИ+"]].merge(
+        ex[["вариант", "L", "исп_шт", f"выход{h:g}с", "в_ИИ-", "в_ИИ+"]], on=["вариант", "L"])
+    base = allr[["variant", "base", "slip"]].drop_duplicates().rename(columns={"variant": "вариант"})
+    return m.merge(base, on="вариант").sort_values(["base", "L", "держать"], ascending=[True, True, False])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("roots", nargs="+", help="папки с данными (по одной на день или одна на всё)")
@@ -284,6 +331,7 @@ def main():
     ap.add_argument("--thr", default="0.01,0.02,0.03,0.05")
     ap.add_argument("--sigma-mult", default="0.75,1,1.5")
     ap.add_argument("--slip-c", default="0,3")
+    ap.add_argument("--slips", default="", help="способы переплаты: 0,1,2,3,5,e:1:1:8 (e:масштаб:запас:потолок - от силы сигнала)")
     ap.add_argument("--hold-s", type=float, default=5)
     ap.add_argument("--view", default="srv", choices=["srv", "rcv"],
                     help="srv - книга на сервере в момент матча (реально); rcv - как проверяет бумажный движок (оптимистично)")
@@ -292,8 +340,11 @@ def main():
     a = ap.parse_args()
     pd.set_option("display.width", 250)
     exit_s = tuple(float(x) for x in a.exit_s.split(",") if x)
+    slips = parse_slips(a.slips) if a.slips else None
+    if slips and 5.0 not in exit_s:
+        exit_s += (5.0,)
     params = [Params(float(t), float(s), float(sl)) for t, s, sl in itertools.product(
-        a.thr.split(","), a.sigma_mult.split(","), a.slip_c.split(","))]
+        a.thr.split(","), a.sigma_mult.split(","), ["0"] if slips else a.slip_c.split(","))]
     lat = [int(x) for x in a.latencies.split(",")]
     res = []
     for root in a.roots:
@@ -302,13 +353,17 @@ def main():
         winners = dict(zip(wn.start.astype(int), wn.official_winner))
         t, px = load_source(root, a.source)
         sigs = collect_signals(pm_top, t, px, params)
-        res.append(execute(sigs, PM(pm_top), winners, lat, hold_s=a.hold_s, view=a.view, exit_s=exit_s))
+        res.append(execute(sigs, PM(pm_top), winners, lat, hold_s=a.hold_s, view=a.view, exit_s=exit_s, slips=slips))
         print(f"{root}: тиков {len(t)}, сигналов {len(sigs)}")
     allr = pd.concat(res, ignore_index=True)
     if a.since:
         allr = allr[allr.w >= a.since]
     if allr.empty:
         print("нет сигналов в окнах после --since")
+        return
+    if slips:
+        print("=== сравнение переплат: ц на сигнал (неисполненные = 0), держать до конца и выход через 5 с ===")
+        print(slip_report(allr, exit_s).drop(columns=["вариант"]).round(2).to_string(index=False))
         return
     print(summarize(allr).to_string(index=False))
     if exit_s:
