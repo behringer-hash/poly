@@ -362,7 +362,8 @@ class LiveTrader:
             return
         self.loop = asyncio.get_running_loop()
         slip_c = self._slip_for(s)
-        s = dict(s, ask_signal=s["limit"], limit=round(min(s["limit"] + slip_c / 100, 0.99), 2), slip_c=slip_c,
+        # база - реальный ask сигнала: s["limit"] у бумаги уже включает её собственную переплату (--slip-ticks)
+        s = dict(s, ask_signal=s["ask"], limit=round(min(s["ask"] + slip_c / 100, 0.99), 2), slip_c=slip_c,
                  base_size=self._size_for_depth(s.get("ask_sz")))
         st = self.win_stats.setdefault(s["slug"], dict(orders=0, filled=0, spend=0.0, shares={"Up": 0.0, "Down": 0.0},
                                                        usdc={"Up": 0.0, "Down": 0.0}, cond=None))
