@@ -33,15 +33,20 @@ def cluster_stats(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def portfolio(df: pd.DataFrame, *, max_orders_window=10, max_spend_window=30.0, max_spend_day=100.0, max_loss_day=20.0,
-              min_interval=1.0, min_seconds_left=10.0, max_shares_window=200.0) -> dict:
+              min_interval=1.0, min_seconds_left=10.0, max_shares_window=200.0, max_orders_side=10_000,
+              side_interval=0.0, edge_step_c=None) -> dict:
     """Прогон сигналов по времени через лимиты бота. df - строки одного варианта и одной задержки."""
     d = df.sort_values("t").reset_index(drop=True)
     day_of = lambda ts: int(ts // 86400)
     win_orders, win_spend, win_sh, win_pnl = {}, {}, {}, {}
+    side_n: dict[tuple, int] = {}
+    side_last: dict[tuple, tuple] = {}                # (окно, сторона) -> (время, edge последнего отправленного)
+    wpnls: list[float] = []
     day_spend, day_pnl, stopped = {}, {}, set()
     pending: list[tuple[float, int]] = []            # (время расчёта окна, w)
     last_t = -1e18
-    skipped = dict(стоп_убыток=0, лимит_суток=0, ордеров_окно=0, трат_окно=0, шейров_окно=0, интервал=0, мало_времени=0)
+    skipped = dict(стоп_убыток=0, лимит_суток=0, ордеров_окно=0, трат_окно=0, шейров_окно=0, интервал=0, мало_времени=0,
+                   ордеров_сторона=0, пауза_сторона=0, нет_усиления=0)
     sent = fills = 0
     cum, peak, dd = 0.0, 0.0, 0.0
     daily: dict[int, float] = {}
@@ -51,6 +56,7 @@ def portfolio(df: pd.DataFrame, *, max_orders_window=10, max_spend_window=30.0, 
         while pending and pending[0][0] <= t:
             _, w0 = heapq.heappop(pending)
             p = win_pnl.pop(w0, 0.0)
+            wpnls.append(p)
             dk = day_of(w0)
             day_pnl[dk] = day_pnl.get(dk, 0.0) + p
             daily[dk] = daily.get(dk, 0.0) + p
@@ -78,9 +84,18 @@ def portfolio(df: pd.DataFrame, *, max_orders_window=10, max_spend_window=30.0, 
             skipped["интервал"] += 1
         elif T < min_seconds_left:
             skipped["мало_времени"] += 1
+        elif side_n.get((w, r.sgn), 0) >= max_orders_side:
+            skipped["ордеров_сторона"] += 1
+        elif (w, r.sgn) in side_last and t - side_last[(w, r.sgn)][0] < side_interval:
+            skipped["пауза_сторона"] += 1
+        elif edge_step_c is not None and (w, r.sgn) in side_last and \
+                r.edge * 100 < side_last[(w, r.sgn)][1] * 100 + edge_step_c:
+            skipped["нет_усиления"] += 1
         else:
             sent += 1
             last_t = t
+            side_n[(w, r.sgn)] = side_n.get((w, r.sgn), 0) + 1
+            side_last[(w, r.sgn)] = (t, r.edge)
             if w not in win_orders:
                 heapq.heappush(pending, (w + 300 + 5.0, w))
             win_orders[w] = win_orders.get(w, 0) + 1
@@ -94,6 +109,7 @@ def portfolio(df: pd.DataFrame, *, max_orders_window=10, max_spend_window=30.0, 
                     win_pnl[w] = win_pnl.get(w, 0.0) + r.qty * r.settle / 100.0
     for _, w0 in sorted(pending):                    # хвост: окна, не закрытые до конца данных
         p = win_pnl.pop(w0, 0.0)
+        wpnls.append(p)
         dk = day_of(w0)
         daily[dk] = daily.get(dk, 0.0) + p
         cum += p
@@ -103,7 +119,7 @@ def portfolio(df: pd.DataFrame, *, max_orders_window=10, max_spend_window=30.0, 
     vals = np.array(list(daily.values())) if daily else np.array([0.0])
     return dict(ордеров=sent, исполнений=fills, пропущено=sum(skipped.values()), pnl_всего=round(cum, 2),
                 pnl_в_сутки=round(cum / days, 2), худший_день=round(float(vals.min()), 2),
-                просадка=round(dd, 2), дней_со_стопом=len(stopped), **{f"пр_{k}": v for k, v in skipped.items() if v})
+                просадка=round(dd, 2), худшее_окно=round(min(wpnls), 2) if wpnls else 0.0, дней_со_стопом=len(stopped), **{f"пр_{k}": v for k, v in skipped.items() if v})
 
 
 def main():

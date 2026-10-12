@@ -270,7 +270,7 @@ def execute(sigs: list[dict], pm: PM, winners: dict[int, str], latencies: list[i
                         xs[f"x{h:g}"] = settle                # выйти нечем - держим до экспирации
             won = np.nan if win is None or not fill else float((win == "Up") == (sgn > 0))
             rows.append(dict(variant=label, base=p.base, slip=slip_name, L=L, w=w, day=int(w // 86400), t=t, sgn=sgn,
-                             limit=limit, tgt=tgt, view=s["view"], fill=fill, px=px, qty=qty, won=won, mk=mk,
+                             limit=limit, tgt=tgt, view=s["view"], edge=s["edge"], fill=fill, px=px, qty=qty, won=won, mk=mk,
                              settle=settle, **xs))
     return pd.DataFrame(rows)
 

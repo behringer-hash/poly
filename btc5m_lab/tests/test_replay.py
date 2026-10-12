@@ -168,8 +168,9 @@ def test_overpay_modes_buy_more_levels_of_price():
     assert not slip_report(df, (5,)).empty
 
 
-def _row(t, w, fill=True, px=0.50, qty=5.0, settle=-100 * 0.5175, sgn=1, limit=0.53):
-    return dict(t=t * 1000.0, w=w, sgn=sgn, fill=fill, px=px, qty=qty, settle=settle, limit=limit, tgt=qty, won=0.0)
+def _row(t, w, fill=True, px=0.50, qty=5.0, settle=-100 * 0.5175, sgn=1, limit=0.53, edge=0.05):
+    return dict(t=t * 1000.0, w=w, sgn=sgn, fill=fill, px=px, qty=qty, settle=settle, limit=limit, tgt=qty, won=0.0,
+                edge=edge)
 
 
 def test_portfolio_window_and_day_caps_and_loss_stop():
@@ -213,3 +214,17 @@ def test_min_notional_target_size():
     sigs = [dict(p=Params(0.0), w=W, sgn=1, t=T0 + 100_000.0, view=0.14, edge=0.05)]
     df = execute(sigs, PM(pt), {W: "Up"}, [100], slips=parse_slips("3"))
     assert df.iloc[0].tgt == 7 and df.iloc[0].qty == 7
+
+
+def test_portfolio_side_caps_pause_and_edge_step():
+    from risk_sim import portfolio
+    w = 3000
+    d = pd.DataFrame([_row(w + 20 + i * 2, w, edge=0.03 + 0.005 * i) for i in range(8)])
+    big = dict(max_orders_window=100, max_spend_window=1e9, max_spend_day=1e9, max_loss_day=1e9, min_interval=0)
+    assert portfolio(d, max_orders_side=3, **big)["ордеров"] == 3
+    r = portfolio(d, side_interval=5.0, **big)                         # ордера раз в 2 с: проходит каждый третий
+    assert r["ордеров"] == 3 and r["пр_пауза_сторона"] == 5
+    # edge растёт на 0.5 ц за ордер: шаг 1 ц пропускает каждый второй
+    r = portfolio(d, edge_step_c=1.0, **big)
+    assert r["ордеров"] == 4 and r["пр_нет_усиления"] == 4
+    assert "худшее_окно" in portfolio(d, **big)
