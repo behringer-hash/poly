@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from lead_lag import PM
-from replay import Params, collect_signals, execute, summarize
+from replay import Params, collect_signals, execute, parse_slips, summarize
 
 W = 3000                       # начало окна (кратно 300), секунды
 T0 = W * 1000                  # то же в мс
@@ -166,3 +166,50 @@ def test_overpay_modes_buy_more_levels_of_price():
     assert slip_extra_c(("edge", 1.0, 1.0, 8.0), 0.015) == 0
     from replay import slip_report
     assert not slip_report(df, (5,)).empty
+
+
+def _row(t, w, fill=True, px=0.50, qty=5.0, settle=-100 * 0.5175, sgn=1, limit=0.53):
+    return dict(t=t * 1000.0, w=w, sgn=sgn, fill=fill, px=px, qty=qty, settle=settle, limit=limit, tgt=qty, won=0.0)
+
+
+def test_portfolio_window_and_day_caps_and_loss_stop():
+    from risk_sim import portfolio
+    w = 3000
+    base = 1_000_000                                      # любое начало суток
+    # 15 исполненных ордеров в одном окне в разные секунды: лимит 10 ордеров на окно
+    d = pd.DataFrame([_row(w + 20 + i * 2, w) for i in range(15)])
+    r = portfolio(d, max_orders_window=10, max_spend_window=1000, max_spend_day=1000, max_loss_day=1000, min_interval=1.0)
+    assert r["ордеров"] == 10 and r["пр_ордеров_окно"] == 5
+    # лимит $ на окно: каждый ордер ~ $2.5 + комиссия, лимит $8 -> 3 ордера
+    r = portfolio(d, max_orders_window=100, max_spend_window=8.0, max_spend_day=1000, max_loss_day=1000, min_interval=0)
+    assert r["исполнений"] == 3 and r["пр_трат_окно"] == 12
+    # минимальный интервал 5 с: из ордеров через 2 с проходит каждый третий
+    r = portfolio(d, max_orders_window=100, max_spend_window=1000, max_spend_day=1000, max_loss_day=1000, min_interval=5.0)
+    assert r["ордеров"] == 5
+    # дневной стоп: два окна по -$2.6 и лимит убытка $5 -> после второго окна торговля в этот день останавливается
+    rows = []
+    for k in range(4):
+        wk = 3000 + 300 * k
+        rows.append(_row(wk + 30, wk, qty=5.0, settle=-100 * 1.0 * 1.0, px=0.5))       # проигрыш ~ -$5 на ордер
+    r = portfolio(pd.DataFrame(rows), max_loss_day=8.0, max_spend_day=1000, min_interval=0)
+    # убыток -$5 после 1-го окна (< $8), -$10 после 2-го (>= $8): 3-е и 4-е окна пропущены
+    assert r["дней_со_стопом"] == 1 and r["ордеров"] == 2 and r["пр_стоп_убыток"] == 2
+
+
+def test_cooldown_reduces_signals_and_names_variant():
+    t_jump = T0 + 100_000
+    pt = top([(T0 + 10_000, 20, .49, .51, 100, 100)])
+    t, px = ticks(t_jump, jump=15.0)
+    s1 = collect_signals(pt, t, px, [Params(0.03, cooldown_s=1.0)])
+    s30 = collect_signals(pt, t, px, [Params(0.03, cooldown_s=30.0)])
+    assert len(s30) < len(s1) and Params(0.03, cooldown_s=30.0).base.endswith("_cd30")
+    assert Params(0.03).base == "thr0.03_s1"
+
+
+def test_min_notional_target_size():
+    # цена 0.14 (+3 ц) -> ордер не меньше $1: ceil(1.05/0.17) = 7 шейров, а не 5
+    pt = top([(T0 + 10_000, 20, .13, .14, 100, 100)])
+    t, px = ticks(T0 + 100_000, jump=15.0)
+    sigs = [dict(p=Params(0.0), w=W, sgn=1, t=T0 + 100_000.0, view=0.14, edge=0.05)]
+    df = execute(sigs, PM(pt), {W: "Up"}, [100], slips=parse_slips("3"))
+    assert df.iloc[0].tgt == 7 and df.iloc[0].qty == 7

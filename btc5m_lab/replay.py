@@ -38,7 +38,8 @@ class Params:
 
     @property
     def base(self) -> str:
-        return f"thr{self.thr:g}_s{self.sigma_mult:g}"
+        cd = "" if self.cooldown_s == 1.0 else f"_cd{self.cooldown_s:g}"
+        return f"thr{self.thr:g}_s{self.sigma_mult:g}{cd}"
 
     @property
     def name(self) -> str:
@@ -237,6 +238,7 @@ def execute(sigs: list[dict], pm: PM, winners: dict[int, str], latencies: list[i
             slip_name = slip_label(sl)
             label = f"{p.base}_{slip_name}"
         win = winners.get(w)
+        tgt = float(max(clip, math.ceil(1.05 / max(limit, 0.01) - 1e-9)))     # как live.order_size: ордер не меньше $1
         for L in latencies:
             m = pm.state(w, t + L, view)
             e = pm.state(w, t + L + hold_s * 1000, view)
@@ -246,8 +248,8 @@ def execute(sigs: list[dict], pm: PM, winners: dict[int, str], latencies: list[i
                     px, size = m[1], m[3]
                 else:
                     px, size = (1 - m[0] if np.isfinite(m[0]) else np.nan), m[2]
-                if np.isfinite(px) and np.isfinite(size) and px <= limit + 1e-9 and min(clip, size) >= min_fill - 1e-9:
-                    fill, qty = True, min(clip, size)
+                if np.isfinite(px) and np.isfinite(size) and px <= limit + 1e-9 and min(tgt, size) >= min_fill - 1e-9:
+                    fill, qty = True, min(tgt, size)
             mk = settle = np.nan
             xs = {f"x{h:g}": np.nan for h in exit_s}
             if fill:
@@ -266,8 +268,10 @@ def execute(sigs: list[dict], pm: PM, winners: dict[int, str], latencies: list[i
                         xs[f"x{h:g}"] = (bid_t - px - fee - FEE * bid_t * (1 - bid_t)) * 100
                     else:
                         xs[f"x{h:g}"] = settle                # выйти нечем - держим до экспирации
-            rows.append(dict(variant=label, base=p.base, slip=slip_name, L=L, w=w, day=int(w // 86400), fill=fill,
-                             px=px, qty=qty, mk=mk, settle=settle, **xs))
+            won = np.nan if win is None or not fill else float((win == "Up") == (sgn > 0))
+            rows.append(dict(variant=label, base=p.base, slip=slip_name, L=L, w=w, day=int(w // 86400), t=t, sgn=sgn,
+                             limit=limit, tgt=tgt, view=s["view"], fill=fill, px=px, qty=qty, won=won, mk=mk,
+                             settle=settle, **xs))
     return pd.DataFrame(rows)
 
 
