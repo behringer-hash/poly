@@ -400,6 +400,8 @@ def parse():
     p.add_argument("--clip", type=float, default=50.0,
                    help="размер бумажного ордера, шейров (по умолчанию 50; для сравнения с живым тестом можно 5)")
     p.add_argument("--no-color", action="store_true")
+    p.add_argument("--slip-ticks", type=int, default=0,
+                   help="переплата бумажных ордеров в центах (чтобы бумажный счёт повторял живой ордер с переплатой)")
     p.add_argument("--live", default="", help="файл настроек живого теста (см. live_config.example.json)")
     p.add_argument("--mode", default="dry", choices=["dry", "sign", "live"],
                    help="dry - ничего не подписывать; sign - подписывать, не отправлять; live - реальные ордера")
@@ -409,6 +411,7 @@ def parse():
                  latencies_ms=[int(x) for x in a.latencies.split(",") if x.strip()])
     cfg.status_every_sec = 30
     cfg.backup_clob = not a.single_clob
+    cfg.slippage_ticks = a.slip_ticks
     cfg.paper_binance = a.binance_source
     cfg.paper_binance_fut = a.binance_fut
     cfg.paper_binance_fut_book = a.binance_fut_book

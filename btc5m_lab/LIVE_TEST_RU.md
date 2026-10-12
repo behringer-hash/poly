@@ -36,7 +36,7 @@ nano live_config_c1.json
 tmux kill-session -t c1 2>/dev/null   # если сеанс c1 уже есть (ошибка «duplicate session») - удалить старый
 tmux new -s c1                       # сеанс, который живёт после закрытия окна
 python3 bot.py --live live_config_c1.json --mode dry --no-chart --clip 5 --single-clob \
-    --variants c1:0.03:bybit:1 --latencies 200,300 --show c1@200 2>&1 | tee -a ~/c1_dry.log
+    --variants c1:0.03:bybit:1 --latencies 200,300 --show c1@200 --slip-ticks 3 2>&1 | tee -a ~/c1_dry.log
 ```
 Что должно быть: бот подключается к Polymarket и Bybit, раз в 10 секунд печатает статус; при сигнале строки `[LIVE ...]`
 — «отправил бы» или «пропуск: причина» (лимит окна, слишком часто и т.п.). Отключиться, оставив бота работать:
@@ -48,7 +48,7 @@ Ctrl+B, затем D. Вернуться: `tmux attach -t c1`. Останови�
 ```bash
 read -s PM_PRIVATE_KEY && export PM_PRIVATE_KEY      # вставьте ключ вслепую, Enter; он не попадёт в историю
 python3 bot.py --live live_config_c1.json --mode sign --no-chart --clip 5 --single-clob \
-    --variants c1:0.03:bybit:1 --latencies 200,300 --show c1@200 2>&1 | tee -a ~/c1_sign.log
+    --variants c1:0.03:bybit:1 --latencies 200,300 --show c1@200 --slip-ticks 3 2>&1 | tee -a ~/c1_sign.log
 ```
 Проверяется: баланс кошелька, верный `signature_type` (бот перебирает варианты и подскажет), подпись ордеров,
 размер ордера ≥ $1. Ордера не отправляются. После остановки: `unset PM_PRIVATE_KEY`.
@@ -67,6 +67,7 @@ python3 bot.py --live live_config_c1.json --mode sign --no-chart --clip 5 --sing
 ## Если что-то не так
 | Симптом | Что делать |
 |---|---|
+| «БУМАГА: ПРОМАХ» при том, что лучший ask ниже лимита живого ордера | бумажный счёт без ключа `--slip-ticks 3` не платит переплату и считает промахом то, что живой ордер с лимитом +3 ц купил бы; добавьте `--slip-ticks 3` (нужна версия bot.py с этим ключом) |
 | `вариант anc_3c_by не найден` | забыт ключ `--show c1@200` (по умолчанию бот показывает вариант anc_3c_by) |
 | `duplicate session: c1` | сеанс уже существует: `tmux attach -t c1` или `tmux kill-session -t c1` и заново |
 | `ModuleNotFoundError` | `pip3 install <модуль> --break-system-packages` |
