@@ -70,6 +70,11 @@ DEFAULTS = {
     "max_loss_per_day": 20.0,               # после такого убытка за сутки - стоп
     "min_seconds_left": 10,
     "min_interval_sec": 1.0,
+    # пауза после ИСПОЛНЕННОГО ордера, секунд (None - не используется, тогда работает только min_interval_sec после любого ордера).
+    # Режим для высокой доли пустых ордеров: min_interval_sec ~1 (защита от пачки уже летящих ордеров), а долгая пауза - только после покупки
+    "min_interval_after_fill_sec": None,
+    # False: ордер, ответ на который «встречных заявок нет» (ничего не куплено), не занимает место в лимите ордеров на окно
+    "count_unfilled_orders": True,
     # на сколько центов выше увиденного ask ставить лимит FAK-ордера (переплата ради исполнения);
     # ордер забирает все уровни книги до этой цены, платим фактическую цену уровней, а не лимит
     "slippage_cents": 0,
@@ -111,12 +116,13 @@ class LiveTrader:
         assert mode in ("dry", "sign", "live")
         self.c, self.mode, self.pm, self.w, self.ui = lcfg, mode, pm, writer, ui
         self.client = None
-        self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="live")
+        self.pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="live")
         self.win_stats: dict[str, dict] = {}   # slug -> счётчики и позиция окна
         self.day = None
         self.day_spend = 0.0
         self.day_pnl = 0.0
         self.last_order_t = 0.0
+        self.last_fill_t = 0.0
         self.stopped_reason = None
         self.paper_by_sid: dict[int, dict] = {}  # sid -> {L: "fill"/"miss"} для сравнения
         self.live_by_sid: dict[int, str] = {}
@@ -352,8 +358,12 @@ class LiveTrader:
             return "цена вне диапазона"
         if s["T"] < c["min_seconds_left"]:
             return "мало времени до конца окна"
-        if clock.now() - self.last_order_t < c["min_interval_sec"]:
+        now = clock.now()
+        if now - self.last_order_t < c["min_interval_sec"]:
             return "слишком часто"
+        after_fill = c.get("min_interval_after_fill_sec")
+        if after_fill is not None and now - self.last_fill_t < after_fill:
+            return "слишком часто после исполнения"
         return None
 
     # ------------------------------------------------------------------ события движка
@@ -442,9 +452,12 @@ class LiveTrader:
         self.day_spend += fact - est
         st["spend"] += fact - est
         if filled > 0:
+            self.last_fill_t = t_resp
             st["filled"] += 1
             st["shares"][s["outcome"]] += filled
             st["usdc"][s["outcome"]] += usdc
+        if status == "no_match" and not self.c.get("count_unfilled_orders", True):
+            st["orders"] -= 1            # ничего не куплено: место в лимите ордеров окна освобождаем
         self.live_by_sid[s["sid"]] = "fill" if filled > 0 else "miss"
         if filled > 0 and avg and self.loop is not None:
             self.slip_stats[s["slip_c"]]["fills"] += 1

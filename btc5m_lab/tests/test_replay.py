@@ -228,3 +228,27 @@ def test_portfolio_side_caps_pause_and_edge_step():
     r = portfolio(d, edge_step_c=1.0, **big)
     assert r["ордеров"] == 4 and r["пр_нет_усиления"] == 4
     assert "худшее_окно" in portfolio(d, **big)
+
+
+def test_portfolio_pause_after_fill_and_release_unfilled():
+    from risk_sim import portfolio
+    w = 3000
+    # 6 ордеров через 2 с: чётные (0,2,4) пустые, нечётные исполнены
+    rows = []
+    for i in range(6):
+        r = _row(w + 20 + i * 2, w)
+        if i % 2 == 0:
+            r.update(fill=False, qty=0.0, px=float("nan"), settle=float("nan"), won=float("nan"))
+        rows.append(r)
+    d = pd.DataFrame(rows)
+    big = dict(max_spend_window=1e9, max_spend_day=1e9, max_loss_day=1e9)
+    # пауза 5 с после ЛЮБОГО ордера: проходит каждый третий (0 и 3)
+    assert portfolio(d, max_orders_window=100, min_interval=5.0, **big)["ордеров"] == 2
+    # 1 с после любого + 5 с после исполнения: 0 (пустой) и 1 (куплен, t=22) проходят; 2 и 3 (2 и 4 с после покупки) - пауза;
+    # 4 (6 с после покупки) и 5 проходят
+    r = portfolio(d, max_orders_window=100, min_interval=1.0, after_fill_interval=5.0, **big)
+    assert r["ордеров"] == 4 and r["пр_пауза_после_исполнения"] == 2
+    # лимит 2 ордера на окно: пустые ордера занимают место - второй исполненный не проходит; с release_unfilled - проходит
+    r1 = portfolio(d, max_orders_window=2, min_interval=1.0, **big)
+    r2 = portfolio(d, max_orders_window=2, min_interval=1.0, release_unfilled=True, **big)
+    assert r1["исполнений"] == 1 and r2["исполнений"] == 2

@@ -34,8 +34,10 @@ def cluster_stats(df: pd.DataFrame) -> pd.DataFrame:
 
 def portfolio(df: pd.DataFrame, *, max_orders_window=10, max_spend_window=30.0, max_spend_day=100.0, max_loss_day=20.0,
               min_interval=1.0, min_seconds_left=10.0, max_shares_window=200.0, max_orders_side=10_000,
-              side_interval=0.0, edge_step_c=None) -> dict:
-    """Прогон сигналов по времени через лимиты бота. df - строки одного варианта и одной задержки."""
+              side_interval=0.0, edge_step_c=None, after_fill_interval=None, release_unfilled=False) -> dict:
+    """Прогон сигналов по времени через лимиты бота. df - строки одного варианта и одной задержки.
+    after_fill_interval: пауза (с) после ИСПОЛНЕННОГО ордера (min_interval при этом считается от любого отправленного);
+    release_unfilled: неисполненный ордер возвращает место в лимите ордеров окна."""
     d = df.sort_values("t").reset_index(drop=True)
     day_of = lambda ts: int(ts // 86400)
     win_orders, win_spend, win_sh, win_pnl = {}, {}, {}, {}
@@ -46,7 +48,8 @@ def portfolio(df: pd.DataFrame, *, max_orders_window=10, max_spend_window=30.0, 
     pending: list[tuple[float, int]] = []            # (время расчёта окна, w)
     last_t = -1e18
     skipped = dict(стоп_убыток=0, лимит_суток=0, ордеров_окно=0, трат_окно=0, шейров_окно=0, интервал=0, мало_времени=0,
-                   ордеров_сторона=0, пауза_сторона=0, нет_усиления=0)
+                   ордеров_сторона=0, пауза_сторона=0, нет_усиления=0, пауза_после_исполнения=0)
+    last_fill = -1e18
     sent = fills = 0
     cum, peak, dd = 0.0, 0.0, 0.0
     daily: dict[int, float] = {}
@@ -82,6 +85,8 @@ def portfolio(df: pd.DataFrame, *, max_orders_window=10, max_spend_window=30.0, 
             skipped["шейров_окно"] += 1
         elif t - last_t < min_interval:
             skipped["интервал"] += 1
+        elif after_fill_interval is not None and t - last_fill < after_fill_interval:
+            skipped["пауза_после_исполнения"] += 1
         elif T < min_seconds_left:
             skipped["мало_времени"] += 1
         elif side_n.get((w, r.sgn), 0) >= max_orders_side:
@@ -98,8 +103,9 @@ def portfolio(df: pd.DataFrame, *, max_orders_window=10, max_spend_window=30.0, 
             side_last[(w, r.sgn)] = (t, r.edge)
             if w not in win_orders:
                 heapq.heappush(pending, (w + 300 + 5.0, w))
-            win_orders[w] = win_orders.get(w, 0) + 1
+            win_orders[w] = win_orders.get(w, 0) + (0 if (release_unfilled and not r.fill) else 1)
             if r.fill:
+                last_fill = t
                 fills += 1
                 cost = r.qty * r.px + FEE * r.px * (1 - r.px) * r.qty
                 win_spend[w] = win_spend.get(w, 0.0) + cost
