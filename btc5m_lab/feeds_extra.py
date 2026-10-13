@@ -159,6 +159,17 @@ FEEDS = {
         ["wss://stream.bybit.com/v5/public/linear"],
         json.dumps({"op": "subscribe", "args": ["allLiquidation.BTCUSDT"]}), _bybit_liq_parse,
         json.dumps({"op": "ping"}), 20),
+    # спотовый Bybit (BTCUSDT): сравнение скорости сигнала со спотом Binance и фьючерсами
+    "bybit_spot": (
+        "bys_trade", ["recv_ms", "T", "price", "size", "side"],
+        ["wss://stream.bybit.com/v5/public/spot"],
+        json.dumps({"op": "subscribe", "args": ["publicTrade.BTCUSDT"]}), _bybit_parse,
+        json.dumps({"op": "ping"}), 20),
+    "bybit_spot_book": (
+        "bys_book1", ["recv_ms", "T", "cts", "type", "u", "bids", "asks"],
+        ["wss://stream.bybit.com/v5/public/spot"],
+        json.dumps({"op": "subscribe", "args": ["orderbook.1.BTCUSDT"]}), _bybit_book_parse,
+        json.dumps({"op": "ping"}), 20),
     "kraken": (
         "kr_trade", ["recv_ms", "T", "price", "size", "side"],
         ["wss://ws.kraken.com/v2"],

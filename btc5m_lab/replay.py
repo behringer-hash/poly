@@ -76,11 +76,11 @@ def _levels(s) -> list[tuple[float, float]]:
     return [(float(a), float(b)) for a, b in (x.split(":") for x in s.split("|"))]
 
 
-def bybit_mid(root: str) -> tuple[np.ndarray, np.ndarray]:
+def bybit_mid(root: str, book: str = "by_book1", trade: str = "by_trade") -> tuple[np.ndarray, np.ndarray]:
     """Цена Bybit как в живом боте (pm.bybit_lite): середина лучших bid/ask из orderbook.1 (поток by_book1,
     снимки и дельты), а если верх книги неизвестен или перекрещен - цена последней сделки (by_trade)."""
-    bk = read(root, "by_book1", ["recv_ms", "type", "bids", "asks"])
-    tr = read(root, "by_trade", ["recv_ms", "price"])
+    bk = read(root, book, ["recv_ms", "type", "bids", "asks"])
+    tr = read(root, trade, ["recv_ms", "price"])
     ev = [(t, 0, ty, b, a) for t, ty, b, a in zip(bk.recv_ms, bk.type, bk.bids, bk.asks)] if len(bk) else []
     ev += [(t, 1, p, None, None) for t, p in zip(tr.recv_ms, tr.price)] if len(tr) else []
     ev.sort(key=lambda e: (e[0], e[1]))
@@ -119,6 +119,18 @@ def load_source(root: str, name: str) -> tuple[np.ndarray, np.ndarray]:
         return bybit_mid(root)
     if name == "bybit_trade":
         d = read(root, "by_trade", ["recv_ms", "price"])
+    elif name == "bybit_spot":
+        return bybit_mid(root, "bys_book1", "bys_trade")
+    elif name == "bybit_spot_trade":
+        d = read(root, "bys_trade", ["recv_ms", "price"])
+    elif name == "okx":
+        d = read(root, "ok_trade", ["recv_ms", "price"])
+    elif name == "kraken":
+        d = read(root, "kr_trade", ["recv_ms", "price"])
+    elif name in ("binance_fut_book", "binance_book"):
+        d = read(root, "bnf_book" if name == "binance_fut_book" else "bn_book", ["recv_ms", "bid", "ask"])
+        d = d.dropna(subset=["bid", "ask"])
+        d["price"] = (d.bid + d.ask) / 2
     elif name == "binance_fut":
         d = read(root, "bnf_agg", ["recv_ms", "price"])
     elif name == "binance":
@@ -330,7 +342,7 @@ def slip_report(allr: pd.DataFrame, exit_s, h: float = 5.0) -> pd.DataFrame:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("roots", nargs="+", help="папки с данными (по одной на день или одна на всё)")
-    ap.add_argument("--source", default="binance_fut", help="bybit (середина книги, как в боте) | bybit_trade | coinbase | binance_fut | binance | bitstamp | rtds")
+    ap.add_argument("--source", default="binance_fut", help="bybit (середина книги, как в боте) | bybit_trade | bybit_spot | bybit_spot_trade | binance_fut | binance_fut_book | binance | binance_book | coinbase | bitstamp | okx | kraken | rtds")
     ap.add_argument("--latencies", default="150,300,450,600")
     ap.add_argument("--thr", default="0.01,0.02,0.03,0.05")
     ap.add_argument("--sigma-mult", default="0.75,1,1.5")

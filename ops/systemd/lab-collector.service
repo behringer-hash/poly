@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 User=lab
 WorkingDirectory=/home/lab/poly/btc5m_lab
-ExecStart=/home/lab/venv/bin/python run.py --no-paper --no-wallet --extra-feeds all --data-dir /home/lab/data
+ExecStart=/home/lab/venv/bin/python run.py --no-paper --no-wallet --extra-feeds binance_futures,bybit,bybit_book,bybit_spot,bybit_spot_book --binance-streams aggTrade,depth5 --data-dir /home/lab/data
 Restart=always
 RestartSec=10
 # run.py корректно завершается по Ctrl+C (SIGINT): данные успевают сброситься на диск
