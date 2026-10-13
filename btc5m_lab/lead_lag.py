@@ -22,6 +22,24 @@ FEE = 0.07
 CLOCK_OFFSET_MS = 18.0  # local - binance, из clock_*.csv; нужен только для оценок опережения по времени биржи
 
 
+def _drop_repeated_headers(d: pd.DataFrame) -> pd.DataFrame:
+    """После перезапуска процесса в тот же файл дописывается заголовок: строка, где каждое значение равно имени колонки.
+    Такие строки убираем и возвращаем числовым колонкам числовой тип."""
+    if d.empty or any(pd.api.types.is_numeric_dtype(d[c]) for c in d.columns):
+        return d
+    hdr = np.ones(len(d), bool)
+    for c in d.columns:
+        hdr &= d[c].astype(str).values == str(c)
+    if not hdr.any():
+        return d
+    d = d[~hdr].copy()
+    for c in d.columns:
+        x = pd.to_numeric(d[c], errors="coerce")
+        if x.notna().sum() >= 0.9 * d[c].notna().sum():
+            d[c] = x
+    return d.reset_index(drop=True)
+
+
 def read(root: str, stream: str, cols=None) -> pd.DataFrame:
     fs = sorted(glob.glob(os.path.join(root, f"{stream}_*.csv*")))
     if not fs:
@@ -32,7 +50,7 @@ def read(root: str, stream: str, cols=None) -> pd.DataFrame:
             dfs.append(pd.read_csv(f, usecols=cols, low_memory=False))
         except pd.errors.EmptyDataError:      # файл только что создан (начало часа/суток) и ещё пуст
             continue
-    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+    return _drop_repeated_headers(pd.concat(dfs, ignore_index=True)) if dfs else pd.DataFrame()
 
 
 class PM:

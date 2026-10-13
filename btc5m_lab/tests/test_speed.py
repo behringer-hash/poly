@@ -48,3 +48,13 @@ def test_jump_signals_and_execute():
     assert len(sigs) == 1 and sigs[0]["sgn"] == 1 and abs(sigs[0]["view"] - 0.50) < 1e-9
     df = execute(sigs, pm, {W0: "Up"}, [300], slips=parse_slips("3"))
     assert df.iloc[0].fill and abs(df.iloc[0].px - 0.50) < 1e-9
+
+
+def test_read_drops_repeated_headers(tmp_path):
+    from lead_lag import read
+    (tmp_path / "windows_a.csv").write_text("start,official_winner\n3000,Up\nstart,official_winner\n3300,Down\n")
+    (tmp_path / "by_trade_a.csv").write_text("recv_ms,T,price\n1,1,100.5\nrecv_ms,T,price\n2,2,101.5\n")
+    d = read(str(tmp_path), "windows")
+    assert d.start.astype(int).tolist() == [3000, 3300] and d.official_winner.tolist() == ["Up", "Down"]
+    t = read(str(tmp_path), "by_trade", ["recv_ms", "price"])
+    assert t.recv_ms.tolist() == [1, 2] and t.price.tolist() == [100.5, 101.5] and t.recv_ms.dtype != object
