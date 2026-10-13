@@ -1,0 +1,17 @@
+источники с данными: bybit (122262 тиков), bybit_trade (2017604 тиков), binance_fut (1784893 тиков), binance (1320676 тиков), binance_book (35666 тиков), coinbase (801644 тиков), bitstamp (83678 тиков), okx (1901628 тиков), kraken (269440 тиков)
+Traceback (most recent call last):
+  File "/home/lab/poly/btc5m_lab/speed_compare.py", line 147, in <module>
+    main()
+  File "/home/lab/poly/btc5m_lab/speed_compare.py", line 126, in main
+    ex = {s: load_exch(a.roots, s) for s in src if s in EXCH}
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/speed_compare.py", line 109, in load_exch
+    d = d.dropna().sort_values(tcol, kind="stable")
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/venv/lib/python3.12/site-packages/pandas/core/frame.py", line 8372, in sort_values
+    indexer = nargsort(
+              ^^^^^^^^^
+  File "/home/lab/venv/lib/python3.12/site-packages/pandas/core/sorting.py", line 442, in nargsort
+    indexer = non_nan_idx[non_nans.argsort(kind=kind)]
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'int' and 'str'
