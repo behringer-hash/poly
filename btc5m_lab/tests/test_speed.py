@@ -58,3 +58,46 @@ def test_read_drops_repeated_headers(tmp_path):
     assert d.start.astype(int).tolist() == [3000, 3300] and d.official_winner.tolist() == ["Up", "Down"]
     t = read(str(tmp_path), "by_trade", ["recv_ms", "price"])
     assert t.recv_ms.tolist() == [1, 2] and t.price.tolist() == [100.5, 101.5] and t.recv_ms.dtype != object
+
+
+def test_calibration_states(tmp_path):
+    import calibration
+    w = 3000
+    t0 = w * 1000
+    pm_rows = [dict(recv_ms=t0 + i * 1000, d=40, w=w, o="U", bid=0.69, bid_sz=50, ask=0.70, ask_sz=50, c=0) for i in range(0, 300)]
+    pd.DataFrame(pm_rows).to_csv(tmp_path / "pm_top_a.csv", index=False)
+    pd.DataFrame([dict(slug=f"btc-updown-5m-{w}", start=w, official_winner="Up", ptb_twap=100.0)]).to_csv(tmp_path / "windows_a.csv", index=False)
+    ticks = [dict(recv_ms=t0 + i * 500, price=100.0 + 5 + (i % 2)) for i in range(0, 600)]      # цена выше ptb на ~5
+    pd.DataFrame(ticks).to_csv(tmp_path / "by_trade_a.csv", index=False)
+    d = calibration.build_states(str(tmp_path), "bybit_trade", L=300, step=10)
+    up = d[d.sgn == 1]
+    assert len(up) > 10 and (up.won == 1).all() and (up.zs > 0).all()
+    assert abs(up.pnl.iloc[0] - 100 * (1 - 0.70 - 0.07 * 0.7 * 0.3)) < 1e-6
+    down = d[d.sgn == -1]
+    assert (down.won == 0).all() and (down.zs < 0).all()
+    m, lo, hi = calibration.boot_ci(up)
+    assert m > 0
+
+
+def test_momentum_events_and_logit(tmp_path):
+    import momentum_features as mf
+    w = 3000
+    t0 = w * 1000
+    pm_rows = [dict(recv_ms=t0 + i * 500, d=40, w=w, o="U", bid=0.49, bid_sz=50, ask=0.50, ask_sz=50, c=0) for i in range(0, 600)]
+    for r in pm_rows[100:]:
+        r.update(bid=0.59, ask=0.60)                       # после скачка (t0+50 с) Up дороже
+    pd.DataFrame(pm_rows).to_csv(tmp_path / "pm_top_a.csv", index=False)
+    pd.DataFrame([dict(slug=f"btc-updown-5m-{w}", start=w, official_winner="Up", ptb_twap=100.0)]).to_csv(tmp_path / "windows_a.csv", index=False)
+    px = np.full(600, 100.0) + (np.arange(600) % 2) * 0.1
+    px[100:] += 20.0                                       # скачок вверх на 20 в момент +50 с
+    pd.DataFrame(dict(recv_ms=t0 + np.arange(600) * 500, price=px)).to_csv(tmp_path / "by_trade_a.csv", index=False)
+    ev = mf.build_events(str(tmp_path), "bybit_trade", N=10, W=500, L=300)
+    assert len(ev) == 1 and ev.dir.iloc[0] == 1 and abs(ev.ask.iloc[0] - 0.60) < 1e-9 and ev.won.iloc[0] == 1.0
+    assert ev.jump.iloc[0] >= 10 and ev.z0.iloc[0] > 0 and abs(ev.rep1.iloc[0] - 10.0) < 1e-6 or ev.rep1.iloc[0] > 0
+    # логистическая модель находит признак, который сдвигает исход
+    rng = np.random.default_rng(0)
+    x = rng.normal(size=4000)
+    ask = rng.uniform(0.3, 0.7, 4000)
+    y = (rng.uniform(size=4000) < 1 / (1 + np.exp(-(mf.logit(ask) + 1.0 * x)))).astype(float)
+    b0, beta = mf.fit_logit(x[:, None], y, mf.logit(ask), l2=1.0)
+    assert 0.8 < beta[0] < 1.2 and abs(b0) < 0.15
