@@ -105,7 +105,7 @@ def part_b(roots, source, live_orders):
     return df
 
 
-def features(root, source, df_rows, sigs):
+def features(root, source, df_rows, sigs, series=None):
     """Признаки сигналов на момент t (только то, что известно к этому моменту)."""
     pt = read(root, "pm_top")
     u = pt[pt.o == "U"].sort_values("recv_ms")
@@ -115,7 +115,7 @@ def features(root, source, df_rows, sigs):
     if len(tr):
         tr = tr[tr.side.astype(str).str.upper().str.startswith("B")]
     tr_by = {k: g.sort_values("server_ts") for k, g in tr.groupby(["w", "o"])} if len(tr) else {}
-    t_src, px = load_source(root, source)
+    t_src, px = series if series is not None else load_source(root, source)
     rows = []
     for s in sigs:
         w, sgn, t = s["w"], s["sgn"], s["t"]

@@ -4,18 +4,22 @@
 
 Что делаем:
   1. сигналы C1 (Bybit, порог 0.03, переплата 3 ц) за все дни; исполнение при каждой из набора задержек L (книга сервера);
-  2. «живая» задержка: ордер, который в момент прихода на биржу (t+25 мс) уже не исполним, не исполнится; у исполнимого задержка
-     берётся из ЭМПИРИЧЕСКОГО распределения ваших живых ордеров, которые были исполнимы при приходе (у них хвост тяжелее,
-     чем у остальных). 30 розыгрышей на каждый вариант;
+  2. задержка до матча берётся у живых ордеров, ИСПОЛНИМЫХ при приходе на биржу (книга сервера через 25 мс ещё не выше лимита);
+     неисполнимые при приходе не исполняются. Два режима:
+       «независимая»  - задержка из общего распределения этих ордеров;
+       «условная»     - вероятность МЕДЛЕННОГО ответа (> 400 мс) зависит от состояния книги на момент сигнала
+                        (логистическая модель на живых ордерах: в тихой книге ответы медленнее), дальше задержка из быстрой
+                        или из медленной части распределения. 30 розыгрышей на вариант;
   3. портфель с правилами бота: пауза 1 с после любого ордера и 5 с после покупки, пустые ордера лимит окна не занимают,
-     не больше 10 ордеров и $30 на окно, без дневных лимитов (чтобы видеть полную картину);
-  4. стратегии отбора: все сигналы / верхние q% по прогнозу дожития (логистическая модель на ранних окнах) / простое правило
+     не больше 10 ордеров и $30 на окно, без дневных лимитов;
+  4. стратегии: все сигналы / верхние q% по прогнозу дожития (модель на ранних окнах) / простое правило
      «возраст верха книги >= A мс и обновлений за 500 мс <= K» (параметры подбираются на ранних окнах);
-  5. оценка - только на поздних окнах (которых модель и правило не видели).
+  5. оценка - только на поздних окнах.
 """
 from __future__ import annotations
 
 import argparse
+import gc
 import itertools
 import os
 from datetime import datetime, timezone
@@ -33,24 +37,14 @@ from risk_sim import portfolio
 LS = [225, 275, 300, 325, 375, 450, 575, 775, 1200]
 ARRIVE_MS = 25.0
 BACK_MS = 22.0
+SLOW_MS = 400.0
 CAPS = dict(max_orders_window=10, max_spend_window=30.0, max_spend_day=1e9, max_loss_day=1e9, min_interval=1.0,
             after_fill_interval=5.0, release_unfilled=True)
 
 
-def empirical_pool(live_roots: list[str], pm: PM) -> np.ndarray:
-    """Эффективная задержка до матча (мс) у живых ордеров, исполнимых в момент прихода на биржу."""
-    d = orders_table(live_roots)
-    if d.empty:
-        return np.array([250.0, 275.0, 300.0, 325.0, 375.0])
-    d = d[d.w.isin(pm.by_w)]
-    ok = [would_fill(pm, r.w, r.sgn, r.t_ms + ARRIVE_MS, float(r.limit), 1.0) for r in d.itertuples()]
-    eff = np.clip(d.total_ms.values.astype(float)[np.array(ok, bool)] - BACK_MS, LS[0], LS[-1])
-    return eff
-
-
 def to_grid(eff: np.ndarray) -> np.ndarray:
     ls = np.array(LS, float)
-    return np.array([int(np.argmin(np.abs(ls - e))) for e in eff])
+    return np.array([int(np.argmin(np.abs(ls - e))) for e in eff], dtype=int)
 
 
 def day_root(roots: list[str], w: int) -> str | None:
@@ -61,9 +55,51 @@ def day_root(roots: list[str], w: int) -> str | None:
     return None
 
 
-def build(roots: list[str], source: str, live_roots: list[str]):
-    sig_frames, grid_arrays, pools = [], [], []
-    pm_all = None
+def live_latency_model(live_roots: list[str], roots: list[str], source: str) -> dict:
+    """Распределение задержки живых ордеров, исполнимых при приходе, и модель вероятности медленного ответа по книге."""
+    default = dict(all_idx=to_grid(np.array([250.0, 275.0, 300.0, 325.0, 375.0])), fast_idx=to_grid(np.array([275.0])),
+                   slow_idx=to_grid(np.array([775.0])), model=None, n=0)
+    d = orders_table(live_roots) if live_roots else pd.DataFrame()
+    if d.empty:
+        return default
+    d["root"] = [day_root(roots, int(w)) for w in d.w]
+    d = d[d.root.notna()]
+    parts = []
+    for root, g in d.groupby("root"):
+        pm = PM(read(root, "pm_top"))
+        g = g[g.w.isin(pm.by_w)].copy()
+        g["arrive"] = [would_fill(pm, r.w, r.sgn, r.t_ms + ARRIVE_MS, float(r.limit), 1.0) for r in g.itertuples()]
+        g = g[g.arrive]
+        sigs = [dict(w=int(x.w), sgn=int(x.sgn), t=float(x.t_ms), view=float(x.ask_signal) if np.isfinite(x.ask_signal) else float(x.limit) - 0.03,
+                     edge=float(x.edge_c) / 100.0 if np.isfinite(x.edge_c) else 0.03) for x in g.itertuples()]
+        f = features(root, source, g, sigs)
+        if len(f):
+            parts.append(f.merge(g[["w", "t_ms", "sgn", "http_ms", "total_ms"]].rename(columns={"t_ms": "t"}), on=["w", "t", "sgn"], how="inner"))
+        del pm
+        gc.collect()
+    if not parts:
+        return default
+    f = pd.concat(parts, ignore_index=True)
+    eff = np.clip(f.total_ms.values.astype(float) - BACK_MS, LS[0], LS[-1])
+    slow = (f.http_ms.values > SLOW_MS)
+    X = f[FEATS].astype(float).fillna(0.0)
+    mu, sd = X.mean(), X.std().replace(0, 1.0)
+    b0, beta = fit_logit(((X - mu) / sd).values, slow.astype(float), np.zeros(len(f)), l2=10.0)
+    idx = to_grid(eff)
+    return dict(all_idx=idx, fast_idx=idx[~slow] if (~slow).any() else idx, slow_idx=idx[slow] if slow.any() else idx,
+                model=(mu, sd, b0, beta), n=len(f), slow_share=float(slow.mean()))
+
+
+def p_slow(sig: pd.DataFrame, lat: dict) -> np.ndarray:
+    if lat["model"] is None:
+        return np.full(len(sig), 0.25)
+    mu, sd, b0, beta = lat["model"]
+    Z = ((sig[FEATS].astype(float).fillna(0.0) - mu) / sd).values
+    return 1 / (1 + np.exp(-(b0 + Z @ beta)))
+
+
+def build(roots: list[str], source: str):
+    sig_frames, ex_frames = [], []
     for root in roots:
         pt = read(root, "pm_top")
         wn = read(root, "windows").drop_duplicates("slug", keep="last")
@@ -71,15 +107,8 @@ def build(roots: list[str], source: str, live_roots: list[str]):
         t, px = load_source(root, source)
         sigs = [s for s in collect_signals(pt, t, px, [Params(0.03, 1.0)]) if s["w"] in winners]
         pm = PM(pt)
-        if pm_all is None:
-            pm_all = pm
-        else:
-            pm_all.by_w.update(pm.by_w)
         ex = execute(sigs, pm, winners, LS, slips=parse_slips("3"))
-        f = features(root, source, ex, sigs)
-        if f.empty:
-            continue
-        # исполнимость при приходе на биржу
+        f = features(root, source, ex, sigs, series=(t, px))
         arr = []
         for s in sigs:
             st = pm.state(s["w"], s["t"] + ARRIVE_MS, "srv")
@@ -89,21 +118,21 @@ def build(roots: list[str], source: str, live_roots: list[str]):
                 continue
             px_s = st[1] if s["sgn"] > 0 else (1 - st[0] if np.isfinite(st[0]) else np.nan)
             arr.append(bool(np.isfinite(px_s) and px_s <= lim + 1e-9))
+        if f.empty:
+            continue
         key = pd.DataFrame([dict(w=s["w"], t=s["t"], sgn=s["sgn"], arrive=a) for s, a in zip(sigs, arr)]).drop_duplicates(["w", "t", "sgn"])
-        f = f.merge(key, on=["w", "t", "sgn"], how="left")
-        ex = ex.drop_duplicates(["w", "t", "sgn", "L"])
-        sig_frames.append(f.drop_duplicates(["w", "t", "sgn"]).reset_index(drop=True))
-        grid_arrays.append(ex)
+        f = f.merge(key, on=["w", "t", "sgn"], how="left").drop_duplicates(["w", "t", "sgn"]).reset_index(drop=True)
+        sig_frames.append(f)
+        ex_frames.append(ex.drop_duplicates(["w", "t", "sgn", "L"]))
+        del pt, wn, t, px, sigs, pm, ex
+        gc.collect()
     if not sig_frames:
         raise SystemExit("нет сигналов")
-    sig = pd.concat(sig_frames, ignore_index=True)
-    ex = pd.concat(grid_arrays, ignore_index=True)
-    pool = empirical_pool(live_roots, pm_all) if live_roots else np.array([250.0, 275.0, 300.0, 325.0, 375.0])
-    return sig, ex, pool
+    return pd.concat(sig_frames, ignore_index=True), pd.concat(ex_frames, ignore_index=True)
 
 
 def make_table(sig: pd.DataFrame, ex: pd.DataFrame) -> dict:
-    """По каждому сигналу и каждой задержке: исполнение и результат (в виде массивов для быстрых розыгрышей)."""
+    """По каждому сигналу и каждой задержке: исполнение и результат (массивы для быстрых розыгрышей)."""
     sig = sig.reset_index(drop=True)
     key = sig[["w", "t", "sgn"]].copy()
     key["i"] = np.arange(len(sig))
@@ -116,9 +145,13 @@ def make_table(sig: pd.DataFrame, ex: pd.DataFrame) -> dict:
     return out
 
 
-def draw(sig: pd.DataFrame, tab: dict, keep: np.ndarray, pool_idx: np.ndarray, rng) -> pd.DataFrame:
+def draw(sig: pd.DataFrame, tab: dict, keep: np.ndarray, lat: dict, mode: str, ps: np.ndarray, rng) -> pd.DataFrame:
     n = len(sig)
-    pick = rng.choice(pool_idx, size=n)
+    if mode == "indep":
+        pick = rng.choice(lat["all_idx"], size=n)
+    else:
+        slow = rng.random(n) < ps
+        pick = np.where(slow, rng.choice(lat["slow_idx"], size=n), rng.choice(lat["fast_idx"], size=n))
     fill = np.zeros(n, bool)
     px, qty, settle, limit, tgt, edge = (np.full(n, np.nan), np.zeros(n), np.full(n, np.nan), np.full(n, np.nan), np.full(n, np.nan), np.full(n, np.nan))
     for j in range(len(LS)):
@@ -131,11 +164,11 @@ def draw(sig: pd.DataFrame, tab: dict, keep: np.ndarray, pool_idx: np.ndarray, r
     return d[keep].reset_index(drop=True)
 
 
-def simulate(sig, tab, keep, pool_idx, draws=30, seed=0) -> dict:
+def simulate(sig, tab, keep, lat, mode, ps, draws=30, seed=0) -> dict:
     rng = np.random.default_rng(seed)
     acc = []
     for _ in range(draws):
-        d = draw(sig, tab, keep, pool_idx, rng)
+        d = draw(sig, tab, keep, lat, mode, ps, rng)
         if d.empty:
             continue
         r = portfolio(d, **CAPS)
@@ -152,16 +185,21 @@ def main():
     ap.add_argument("--draws", type=int, default=30)
     a = ap.parse_args()
     pd.set_option("display.width", 230)
-    sig, ex, pool = build(a.roots, a.source, a.live_data)
-    pool_idx = to_grid(pool)
-    print(f"сигналов {len(sig)}, окон {sig.w.nunique()}; живых исполнимых ордеров для распределения задержки: {len(pool)}")
-    print("доля задержек по корзинам L:", dict(zip(LS, np.round(np.bincount(pool_idx, minlength=len(LS)) / len(pool_idx), 3))))
+    lat = live_latency_model(a.live_data, a.roots, a.source)
+    gc.collect()
+    sig, ex = build(a.roots, a.source)
     tab = make_table(sig, ex)
+    del ex
+    gc.collect()
+    ps = p_slow(sig, lat)
+    print(f"сигналов {len(sig)}, окон {sig.w.nunique()}; живых исполнимых при приходе ордеров для задержки: {lat['n']}, медленных {lat.get('slow_share', float('nan')):.1%}")
+    print("доля задержек по корзинам L (все исполнимые при приходе):", dict(zip(LS, np.round(np.bincount(lat["all_idx"], minlength=len(LS)) / len(lat["all_idx"]), 3))))
+    print(f"прогнозная доля медленных ответов на сигналах: среднее {ps.mean():.3f}, по квартилям возраста верха книги: " +
+          ", ".join(f"{ps[(pd.qcut(sig.age.rank(method='first'), 4, labels=False) == k).values].mean():.2f}" for k in range(4)))
     cut = sig.w.quantile(0.6)
     tr_m, te_m = (sig.w <= cut).values, (sig.w > cut).values
     days_te = max((sig.t[te_m].max() - sig.t[te_m].min()) / 86_400_000.0, 1e-9)
     print(f"обучение/подбор: окна до {cut:.0f} ({tr_m.sum()} сигналов), тест: после ({te_m.sum()} сигналов, {days_te:.2f} сут)")
-    # модель дожития (цель - исполнение при L=300)
     j300 = LS.index(300)
     y = tab["L"][j300]["fill"].astype(float)
     X = sig[FEATS].astype(float).fillna(0.0)
@@ -170,39 +208,34 @@ def main():
     b0, beta = fit_logit(Z[tr_m], y[tr_m], np.zeros(tr_m.sum()), l2=5.0)
     p = 1 / (1 + np.exp(-(b0 + Z @ beta)))
     print("модель дожития: " + ", ".join(f"{c} {b:+.2f}" for c, b in zip(FEATS, beta)))
-    # простое правило: подбор на обучающих окнах
     rules = []
     for A, K in itertools.product([0, 50, 100, 200, 400, 800], [1, 2, 3, 5, 99]):
         keep = ((sig.age >= A) & (sig.n500 <= K)).values
         if (keep & tr_m).sum() < 300:
             continue
-        r = simulate(sig, tab, keep & tr_m, pool_idx, draws=8)
+        r = simulate(sig, tab, keep & tr_m, lat, "cond", ps, draws=8)
         rules.append((A, K, r["pnl"], r["ордеров"], keep))
     rules.sort(key=lambda x: -x[2])
-    print("\nправило «возраст >= A мс и обновлений за 500 мс <= K»: топ-5 на обучающих окнах (pnl $ на всём обучающем периоде)")
+    print("\nправило «возраст >= A мс и обновлений за 500 мс <= K», условная задержка: топ-5 на обучающих окнах (pnl $ за обучающий период)")
     for A, K, pnl, n, _ in rules[:5]:
         print(f"  A={A:4d} K={K:2d}: pnl ${pnl:7.2f}, ордеров {n:6.0f}")
     best = rules[0] if rules else None
-    rows = []
-
-    def run(name, keep):
-        r = simulate(sig, tab, keep & te_m, pool_idx, draws=a.draws, seed=1)
-        n_sig = int((keep & te_m).sum())
-        rows.append(dict(стратегия=name, сигналов=n_sig, ордеров=round(r["ордеров"]), исполнений=round(r["исполн"], 1), pnl_долл=round(r["pnl"], 2),
-                         pnl_в_сутки=round(r["pnl"] / days_te, 2), разброс_розыгрышей=round(r["pnl_sd"], 2),
-                         худшее_окно=round(r["худшее_окно"], 2), просадка=round(r["просадка"], 2)))
-
-    run("все сигналы", np.ones(len(sig), bool))
+    strategies = [("все сигналы", np.ones(len(sig), bool))]
     for q in (0.7, 0.5, 0.3):
-        thr = np.quantile(p[te_m], 1 - q)
-        run(f"верхние {int(q * 100)}% по прогнозу дожития", p >= thr)
+        strategies.append((f"верхние {int(q * 100)}% по прогнозу дожития", p >= np.quantile(p[te_m], 1 - q)))
     if best:
-        run(f"правило A={best[0]} K={best[1]}", best[4])
-    rng = np.random.default_rng(5)
-    run("случайные 50% (контроль)", rng.random(len(sig)) < 0.5)
-    print("\n=== ТЕСТ на поздних окнах: портфель с правилами бота и живой задержкой ===")
-    print(pd.DataFrame(rows).to_string(index=False))
-    print("(разброс_розыгрышей - стандартное отклонение pnl между 30 случайными розыгрышами задержки, не доверительный интервал)")
+        strategies.append((f"правило A={best[0]} K={best[1]}", best[4]))
+    strategies.append(("случайные 50% (контроль)", np.random.default_rng(5).random(len(sig)) < 0.5))
+    for mode, title in (("indep", "независимая задержка (оптимистично)"), ("cond", "условная задержка: в тихой книге ответы медленнее")):
+        rows = []
+        for name, keep in strategies:
+            r = simulate(sig, tab, keep & te_m, lat, mode, ps, draws=a.draws, seed=1)
+            rows.append(dict(стратегия=name, сигналов=int((keep & te_m).sum()), ордеров=round(r["ордеров"]), исполнений=round(r["исполн"], 1),
+                             pnl_долл=round(r["pnl"], 2), pnl_в_сутки=round(r["pnl"] / days_te, 2), разброс=round(r["pnl_sd"], 2),
+                             худшее_окно=round(r["худшее_окно"], 2), просадка=round(r["просадка"], 2)))
+        print(f"\n=== ТЕСТ на поздних окнах, {title} ===")
+        print(pd.DataFrame(rows).to_string(index=False))
+    print("(разброс - стандартное отклонение pnl между случайными розыгрышами задержки, не доверительный интервал)")
 
 
 if __name__ == "__main__":

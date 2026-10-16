@@ -84,6 +84,13 @@ def main():
             continue
         q = pd.qcut(x.rank(method="first"), 4, labels=False)
         print(f"{c:8s} " + "  ".join(f"[{x[q == k].mean():8.1f}] {f.slow[q == k].mean():.2f}" for k in range(4)))
+    print(f"\n=== у исполнимых при приходе: исполнение и время ответа по квартилям «тишины» книги ===")
+    for c in ("n500", "age"):
+        x = f[c].astype(float)
+        q = pd.qcut(x.rank(method="first"), 4, labels=False)
+        rows = [dict(квартиль=int(k), **{c: round(float(x[q == k].mean()), 1)}, ордеров=int((q == k).sum()), исполнено=round(float(f.filled[q == k].mean()), 3),
+                     медиана_ответа_мс=round(float(f.http_ms[q == k].median())), медленных=round(float(f.slow[q == k].mean()), 3)) for k in range(4)]
+        print(pd.DataFrame(rows).to_string(index=False))
     X = f[FEATS].astype(float).fillna(0.0)
     Z = ((X - X.mean()) / X.std().replace(0, 1.0)).values
     y = f.slow.astype(float).values

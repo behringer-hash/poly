@@ -127,13 +127,16 @@ def test_filter_portfolio_helpers():
     for i in range(n):
         for L in fpf.LS:
             rows.append(dict(w=3000, t=sig.t[i], sgn=1, L=L, fill=(L <= 300), px=0.5, qty=5.0, settle=100 * (1 - 0.5 - 0.02), limit=0.53, tgt=5.0, edge=0.04))
-    ex = pd.DataFrame(rows)
-    tab = fpf.make_table(sig, ex)
-    pool_idx = fpf.to_grid(np.array([225.0, 275.0]))              # всегда L <= 300: исполняется
+    tab = fpf.make_table(sig, pd.DataFrame(rows))
+    keep = np.ones(n, bool)
+    early = fpf.to_grid(np.array([225.0, 275.0]))                      # всегда L <= 300: исполняется
+    late = fpf.to_grid(np.array([1200.0]))                             # всегда поздно: не исполняется
+    lat = dict(all_idx=early, fast_idx=early, slow_idx=late, model=None, n=2)
+    ps = np.zeros(n)
     rng = np.random.default_rng(0)
-    d = fpf.draw(sig, tab, np.ones(n, bool), pool_idx, rng)
-    assert d.fill.tolist() == [True] * 5 + [False]                  # шестой неисполним при приходе
-    r = fpf.simulate(sig, tab, np.ones(n, bool), pool_idx, draws=3)
-    assert r["исполн"] > 0 and r["pnl"] > 0
-    pool_late = fpf.to_grid(np.array([1200.0]))                     # всегда поздно: не исполняется
-    assert fpf.simulate(sig, tab, np.ones(n, bool), pool_late, draws=3)["исполн"] == 0
+    d = fpf.draw(sig, tab, keep, lat, "indep", ps, rng)
+    assert d.fill.tolist() == [True] * 5 + [False]                      # шестой неисполним при приходе
+    assert fpf.simulate(sig, tab, keep, lat, "indep", ps, draws=3)["исполн"] > 0
+    # условный режим: вероятность медленного ответа 1 -> всегда поздно -> нет исполнений; 0 -> всегда быстро
+    assert fpf.simulate(sig, tab, keep, lat, "cond", np.ones(n), draws=3)["исполн"] == 0
+    assert fpf.simulate(sig, tab, keep, lat, "cond", np.zeros(n), draws=3)["исполн"] > 0
