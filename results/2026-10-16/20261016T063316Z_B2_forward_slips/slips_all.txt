@@ -1,0 +1,20 @@
+/home/lab/data/2026-10-11: тиков 26601, сигналов 481
+/home/lab/data/2026-10-12: тиков 80733, сигналов 1295
+/home/lab/data/2026-10-13: тиков 98751, сигналов 1384
+/home/lab/data/2026-10-14: тиков 113596, сигналов 1721
+MemoryError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/lab/poly/btc5m_lab/replay.py", line 408, in <module>
+    main()
+  File "/home/lab/poly/btc5m_lab/replay.py", line 370, in main
+    t, px = load_source(root, a.source)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/replay.py", line 119, in load_source
+    return bybit_mid(root)
+           ^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/replay.py", line 86, in bybit_mid
+    ev.sort(key=lambda e: (e[0], e[1]))
+MemoryError
