@@ -101,3 +101,18 @@ def test_momentum_events_and_logit(tmp_path):
     y = (rng.uniform(size=4000) < 1 / (1 + np.exp(-(mf.logit(ask) + 1.0 * x)))).astype(float)
     b0, beta = mf.fit_logit(x[:, None], y, mf.logit(ask), l2=1.0)
     assert 0.8 < beta[0] < 1.2 and abs(b0) < 0.15
+
+
+def test_first_pass_and_auc_and_weights():
+    import reprice_timing as rt
+    import fill_predict as fp
+    t = np.array([0.0, 100.0, 200.0, 300.0])
+    p = np.array([0.50, 0.50, 0.60, 0.70])
+    assert rt.first_pass(t, p, 50.0, 0.50) == 150.0           # цена выше 0.50 впервые в момент 200
+    assert rt.first_pass(t, p, 250.0, 0.50) == 0.0            # к моменту 250 уже выше
+    assert np.isinf(rt.first_pass(t, p, 0.0, 0.80))           # выше 0.80 не будет
+    assert rt.at(t, p, 150.0) == 0.50 and np.isnan(rt.at(t, p, -1.0))
+    assert fp.auc(np.array([0, 0, 1, 1]), np.array([0.1, 0.2, 0.8, 0.9])) == 1.0
+    assert abs(fp.auc(np.array([0, 1, 0, 1]), np.array([0.5, 0.5, 0.5, 0.5])) - 0.5) < 1e-9
+    Ls, w = fp.lat_weights(pd.DataFrame(dict(total_ms=[300.0, 310.0, 320.0, 900.0])))
+    assert abs(w.sum() - 1.0) < 1e-9 and len(Ls) == len(w)
