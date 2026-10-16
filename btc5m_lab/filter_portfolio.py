@@ -177,6 +177,33 @@ def simulate(sig, tab, keep, lat, mode, ps, draws=30, seed=0) -> dict:
     return dict(ордеров=a[:, 0].mean(), исполн=a[:, 1].mean(), pnl=a[:, 2].mean(), pnl_sd=a[:, 2].std(), худшее_окно=a[:, 3].mean(), просадка=a[:, 4].mean())
 
 
+LIVE_CAPS = dict(max_orders_window=10, max_spend_window=30.0, max_spend_day=100.0, max_loss_day=20.0, min_interval=10.0,
+                 after_fill_interval=None, release_unfilled=False)
+
+
+def validate_live(sig, tab, lat, ps, live_roots, draws):
+    """Проверка самого симулятора: те же правила, что были у бота в первом живом запуске, на сигналах его периода - против факта."""
+    d = orders_table(live_roots)
+    t0, t1 = d.t_ms.min(), d.t_ms.max()
+    keep = ((sig.t >= t0) & (sig.t <= t1)).values
+    wins = read(live_roots[0], "live_windows") if live_roots else pd.DataFrame()
+    actual_pnl = np.nan
+    if len(wins):
+        w = wins[pd.to_numeric(wins.filled_orders, errors="coerce") > 0]
+        actual_pnl = float(pd.to_numeric(w.pnl_api, errors="coerce").sum())
+    print(f"\n=== ВАЛИДАЦИЯ симулятора на периоде первого живого запуска ({keep.sum()} сигналов реплея; живых ордеров {len(d)}) ===")
+    print(f"факт: ордеров {len(d)}, исполнений {int(d.filled_f.sum())} ({d.filled_f.mean():.1%}), pnl по закрытым окнам {actual_pnl:+.2f}$")
+    for mode, title in (("indep", "независимая задержка"), ("cond", "условная задержка")):
+        rng = np.random.default_rng(3)
+        acc = []
+        for _ in range(draws):
+            x = draw(sig, tab, keep, lat, mode, ps, rng)
+            r = portfolio(x, **LIVE_CAPS)
+            acc.append([r["ордеров"], r["исполнений"], r["pnl_всего"]])
+        m, sd = np.mean(acc, 0), np.std(acc, 0)
+        print(f"симулятор ({title}): ордеров {m[0]:.0f}±{sd[0]:.0f}, исполнений {m[1]:.0f}±{sd[1]:.0f} ({m[1] / max(m[0], 1):.1%}), pnl {m[2]:+.2f}$ ± {sd[2]:.2f}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("roots", nargs="+")
@@ -192,6 +219,8 @@ def main():
     del ex
     gc.collect()
     ps = p_slow(sig, lat)
+    if a.live_data:
+        validate_live(sig, tab, lat, ps, a.live_data, a.draws)
     print(f"сигналов {len(sig)}, окон {sig.w.nunique()}; живых исполнимых при приходе ордеров для задержки: {lat['n']}, медленных {lat.get('slow_share', float('nan')):.1%}")
     print("доля задержек по корзинам L (все исполнимые при приходе):", dict(zip(LS, np.round(np.bincount(lat["all_idx"], minlength=len(LS)) / len(lat["all_idx"]), 3))))
     print(f"прогнозная доля медленных ответов на сигналах: среднее {ps.mean():.3f}, по квартилям возраста верха книги: " +
