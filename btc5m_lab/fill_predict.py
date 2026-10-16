@@ -41,7 +41,13 @@ def part_a(live_roots, pm_roots):
     if d.empty:
         print("A: нет живых ордеров")
         return None
-    pm = PM(pd.concat([read(r, "pm_top") for r in pm_roots], ignore_index=True))
+    pm = None                                   # по одному дню: все дни сразу в памяти маленького сервера не помещаются
+    for r in pm_roots:
+        one = PM(read(r, "pm_top"))
+        if pm is None:
+            pm = one
+        else:
+            pm.by_w.update(one.by_w)
     d = d[d.w.isin(pm.by_w)].copy()
     print(f"=== A. Живые ордера против книги сервера (ордеров {len(d)}, исполнено {d.filled_f.mean():.1%}) ===")
     rows = []
