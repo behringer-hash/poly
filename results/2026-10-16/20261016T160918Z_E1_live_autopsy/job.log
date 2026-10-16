@@ -1,0 +1,41 @@
+код 1
+=== живой pnl ===
+окон с исполнениями 23 из 124; pnl_api +6.79$ (по 23 окнам с api), pnl_est +6.72$, потрачено api 98.17$, комиссии 2.19$
+
+ордеров 446, исполнено 8.3%
+
+=== статусы ===
+status
+no_match    409
+matched      37
+
+=== тексты ошибок/ответов (топ) ===
+error
+встречных заявок по этой цене уже нет    409
+Traceback (most recent call last):
+  File "/home/lab/poly/btc5m_lab/live_autopsy.py", line 92, in <module>
+    main()
+  File "/home/lab/poly/btc5m_lab/live_autopsy.py", line 53, in main
+    pm = PM(pd.concat([read(r, "pm_top") for r in a.pm_roots], ignore_index=True))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/lead_lag.py", line 62, in __init__
+    t = t[t.o == "U"].copy()
+        ^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/venv/lib/python3.12/site-packages/pandas/core/generic.py", line 6651, in copy
+    data = self._mgr.copy(deep=deep)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/venv/lib/python3.12/site-packages/pandas/core/internals/managers.py", line 766, in copy
+    res._consolidate_inplace()
+  File "/home/lab/venv/lib/python3.12/site-packages/pandas/core/internals/managers.py", line 1977, in _consolidate_inplace
+    self.blocks = _consolidate(self.blocks)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/venv/lib/python3.12/site-packages/pandas/core/internals/managers.py", line 2480, in _consolidate
+    merged_blocks, _ = _merge_blocks(
+                       ^^^^^^^^^^^^^^
+  File "/home/lab/venv/lib/python3.12/site-packages/pandas/core/internals/managers.py", line 2505, in _merge_blocks
+    new_values = np.vstack([b.values for b in blocks])  # type: ignore[misc]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/venv/lib/python3.12/site-packages/numpy/_core/shape_base.py", line 290, in vstack
+    return _nx.concatenate(arrs, 0, dtype=dtype, casting=casting)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 250. MiB for an array with shape (4, 8200525) and data type float64
