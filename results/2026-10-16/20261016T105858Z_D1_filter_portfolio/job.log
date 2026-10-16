@@ -1,0 +1,19 @@
+код 1
+Traceback (most recent call last):
+  File "/home/lab/poly/btc5m_lab/filter_portfolio.py", line 209, in <module>
+    main()
+  File "/home/lab/poly/btc5m_lab/filter_portfolio.py", line 155, in main
+    sig, ex, pool = build(a.roots, a.source, a.live_data)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/filter_portfolio.py", line 79, in build
+    f = features(root, source, ex, sigs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/fill_predict.py", line 118, in features
+    t_src, px = load_source(root, source)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/replay.py", line 120, in load_source
+    return bybit_mid(root)
+           ^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/replay.py", line 87, in bybit_mid
+    ev.sort(key=lambda e: (e[0], e[1]))
+MemoryError
