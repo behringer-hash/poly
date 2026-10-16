@@ -50,7 +50,13 @@ def main():
         e = d.error.fillna("").astype(str).str.slice(0, 90)
         print("\n=== тексты ошибок/ответов (топ) ===")
         print(e[e != ""].value_counts().head(8).to_string())
-    pm = PM(pd.concat([read(r, "pm_top") for r in a.pm_roots], ignore_index=True))
+    # только дни, в которые были ордера (иначе не хватает памяти)
+    import os
+    from datetime import datetime, timezone
+    days = {datetime.fromtimestamp(int(w), tz=timezone.utc).strftime("%Y-%m-%d") for w in d.w}
+    roots = [r for r in a.pm_roots if os.path.basename(os.path.normpath(r)) in days]
+    print(f"дни записи книги: {[os.path.basename(r) for r in roots]}")
+    pm = PM(pd.concat([read(r, "pm_top") for r in roots], ignore_index=True))
     d = d[d.w.isin(pm.by_w)].copy()
     print(f"\nс записью книги: {len(d)}")
     d["ts"] = d.t_sent.astype(float) * 1000.0
