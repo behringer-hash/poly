@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import itertools
 import math
 from dataclasses import dataclass
@@ -371,6 +372,8 @@ def main():
         sigs = collect_signals(pm_top, t, px, params)
         res.append(execute(sigs, PM(pm_top), winners, lat, hold_s=a.hold_s, view=a.view, exit_s=exit_s, slips=slips))
         print(f"{root}: тиков {len(t)}, сигналов {len(sigs)}")
+        del pm_top, wn, t, px, sigs                       # память маленького сервера: данные дня не нужны после расчёта
+        gc.collect()
     allr = pd.concat(res, ignore_index=True)
     if a.since:
         allr = allr[allr.w >= a.since]

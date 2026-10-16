@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # timeout_min: 60
+# v2: лимит памяти 2.3 ГБ (1.5 мало для pandas + данных дня), по одному дню освобождаем память
 # Проверка вперёд (данные после 12:00 UTC 13 октября) с переплатами 0-10 ц шагом 1-2 и от силы сигнала; для сравнения тот же набор на всех данных.
 set -u
-ulimit -v 1500000 2>/dev/null || true
+ulimit -v 2300000 2>/dev/null || true
 export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
-days=$(ls -d "$DATA_DIR"/20* 2>/dev/null | tail -6)
-[ -z "$days" ] && { echo "нет данных"; exit 0; }
 for mode in forward all; do
+  n=6; [ "$mode" = forward ] && n=4
+  days=$(ls -d "$DATA_DIR"/20* 2>/dev/null | tail -$n)
+  [ -z "$days" ] && { echo "нет данных"; exit 0; }
   since=0; [ "$mode" = forward ] && since=1791892800
   echo "=== C1 (Bybit, 0.03, sigma x1), переплаты 0-10 ц: $mode"
   # shellcheck disable=SC2086
