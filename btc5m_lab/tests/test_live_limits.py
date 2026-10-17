@@ -99,3 +99,23 @@ def test_fill_sets_last_fill_t(monkeypatch):
     t, s = send_one(monkeypatch, dict(success=True, status="matched", makingAmount="1.1", takingAmount="5"),
                     min_interval_after_fill_sec=10)
     assert t.last_fill_t == 1000.0 and s["filled"] == 1 and s["orders"] == 1
+
+
+def test_total_loss_survives_midnight(monkeypatch):
+    clk = Clk()
+    monkeypatch.setattr(live, "clock", clk)
+    t = trader(max_loss_per_day=1e9, max_loss_total=25.0)
+    t.day_pnl, t.total_pnl = -10.0, 5.0              # день плохой, но с запуска мы в плюсе
+    assert t._check_limits(sig(), st()) is None
+    t.total_pnl = -25.0
+    assert "общий убыток" in t._check_limits(sig(), st())
+    t.day = None                                      # наступили новые сутки: общий стоп не снимается
+    assert "общий убыток" in t._check_limits(sig(), st())
+
+
+def test_total_loss_off_by_default(monkeypatch):
+    clk = Clk()
+    monkeypatch.setattr(live, "clock", clk)
+    t = trader(max_loss_per_day=1e9)
+    t.total_pnl = -1000.0
+    assert t._check_limits(sig(), st()) is None

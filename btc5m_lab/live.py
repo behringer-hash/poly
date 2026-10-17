@@ -68,6 +68,7 @@ DEFAULTS = {
     "max_spend_per_window": 15.0,           # $ за окно
     "max_spend_per_day": 40.0,              # $ за сутки (UTC)
     "max_loss_per_day": 20.0,               # после такого убытка за сутки - стоп
+    "max_loss_total": None,                 # убыток с запуска бота (не обнуляется в полночь); None - не проверять
     "min_seconds_left": 10,
     "min_interval_sec": 1.0,
     # пауза после ИСПОЛНЕННОГО ордера, секунд (None - не используется, тогда работает только min_interval_sec после любого ордера).
@@ -121,6 +122,7 @@ class LiveTrader:
         self.day = None
         self.day_spend = 0.0
         self.day_pnl = 0.0
+        self.total_pnl = 0.0                    # pnl закрытых окон с запуска бота
         self.last_order_t = 0.0
         self.last_fill_t = 0.0
         self.stopped_reason = None
@@ -341,6 +343,10 @@ class LiveTrader:
             return f"найден файл {c['stop_file']} - аварийная остановка"
         if self.stopped_reason:
             return self.stopped_reason
+        lt = c.get("max_loss_total")
+        if lt is not None and -self.total_pnl >= lt:
+            self.stopped_reason = f"общий убыток с запуска {self.total_pnl:.2f}$ достиг лимита"
+            return self.stopped_reason
         if -self.day_pnl >= c["max_loss_per_day"]:
             self.stopped_reason = f"дневной убыток {self.day_pnl:.2f}$ достиг лимита"
             return self.stopped_reason
@@ -540,6 +546,7 @@ class LiveTrader:
                        for o in ("Up", "Down") if st["shares"][o] > 0)
         pnl_est = payout - usdc_est - fees_est
         self.day_pnl += pnl_est
+        self.total_pnl += pnl_est
         # сравнение с бумагой по тем же сигналам
         sids = [sid for sid in self.live_by_sid if sid in self.paper_by_sid]
         lines = []
@@ -578,6 +585,7 @@ class LiveTrader:
             shares_win = sum(float(a["size"]) for a in acts if a.get("outcome") == winner)
             pnl = shares_win - usdc
             self.day_pnl += pnl - pnl_est
+            self.total_pnl += pnl - pnl_est
             emit(f"\033[95m[LIVE] сверка с Polymarket: потрачено ${usdc:.2f} (комиссии ${fees:.2f}), "
                  f"PnL окна {pnl:+.2f}$ (оценка была {pnl_est:+.2f}$)\033[0m")
             self.w.write("live_windows", tuple(row + [round(usdc, 4), round(fees, 4), round(pnl_est, 4),
