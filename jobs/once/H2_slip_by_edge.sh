@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # timeout_min: 90
-# v2: + срезы по силе сигнала и пороги edge. Переплата 0-10 ц по дням с задержкой из живых ордеров.
+# v3 (исправлен список переплат): + срезы по силе сигнала и пороги edge. Переплата 0-10 ц по дням с задержкой из живых ордеров.
 set -u
 ulimit -v 2300000 2>/dev/null || true
 export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1

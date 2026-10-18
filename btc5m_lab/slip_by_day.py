@@ -18,7 +18,7 @@ from lead_lag import PM, read
 from live_vs_replay import orders_table
 from replay import Params, collect_signals, execute, load_source, parse_slips
 
-SLIPS = "0,1,2,3,4,5,6,8,10"
+SLIPS = "0,1,2,3,4,5,6,7,8,10"
 
 
 def main():
@@ -84,7 +84,9 @@ def main():
     for sl in (3.0, 7.0):
         for thr in (3.0, 3.5, 4.0, 4.5, 5.0, 6.0):
             g = d[(d.slip_c == sl) & (d.edge_c >= thr)]
-            n_all = len(d[d.slip_c == sl].drop_duplicates(["w", "t", "sgn"]))
+            if g.empty:
+                continue
+            n_all = max(len(d[d.slip_c == sl].drop_duplicates(["w", "t", "sgn"])), 1)
             tot = g.c.sum() / 100 * 5
             per = g.groupby("day").c.sum().div(g.groupby("day").size().clip(lower=1)).round(2)
             rows.append(dict(доплата=sl, порог=thr, доля_сигналов=round(len(g.drop_duplicates(["w", "t", "sgn"])) / n_all, 3), исполнено=round(g.fill.mean(), 3),
