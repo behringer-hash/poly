@@ -50,7 +50,7 @@ def run_table(root: str, run: str, pm_roots: list[str]) -> pd.DataFrame:
         f["bn"] = [(last_at(tb, pb, t) - last_at(tb, pb, t - 500)) * s for t, s in zip(f.t, f.sgn)]     # скачок Binance-фьючерса в сторону ордера, $
         f["bybit_dir"] = f.btc                                                                          # |скачок Bybit| за 500 мс
         f["x_agree"] = (f.bn > 0).astype(float)
-        parts.append(f.merge(g[["w", "t_ms", "sgn", "filled_f", "pnl", "fsh", "size"]].rename(columns={"t_ms": "t"}), on=["w", "t", "sgn"], how="inner"))
+        parts.append(f.merge(g[["w", "t_ms", "sgn", "filled_f", "pnl", "fsh", "size"]].rename(columns={"t_ms": "t", "size": "osize"}), on=["w", "t", "sgn"], how="inner"))
     out = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
     out["run"] = run
     return out
@@ -63,7 +63,7 @@ def main():
     a = ap.parse_args()
     pd.set_option("display.width", 240)
     f = pd.concat([run_table(dr, nm, a.pm_roots) for nm, dr in a.run], ignore_index=True)
-    f["size"] = f["size"].astype(float)
+    f["osize"] = f["osize"].astype(float)
     print(f"ордеров с признаками {len(f)}, исполнено {int(f.filled_f.sum())}; " + ", ".join(f"{r}: {len(x)} ордеров, {x.pnl.sum():+.2f}$" for r, x in f.groupby("run")))
     feats = FEATS + ["bn", "x_agree"]
     rows = []
@@ -75,7 +75,7 @@ def main():
         per = {}
         for run, g in f.groupby("run"):
             qq = q[g.index]
-            per[run] = [g.pnl[qq == k].sum() / max(g["size"][qq == k].sum(), 1) * 100 for k in range(4)]     # ц на отправленный шейр
+            per[run] = [g.pnl[qq == k].sum() / max(g["osize"][qq == k].sum(), 1) * 100 for k in range(4)]     # ц на отправленный шейр
         tot = [f.pnl[q == k].sum() for k in range(4)]
         fr = [f.filled_f[q == k].mean() for k in range(4)]
         sl = {r: np.polyfit(range(4), v, 1)[0] for r, v in per.items()}

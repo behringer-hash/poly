@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # timeout_min: 60
-# Различают ли признаки момента сигнала (книга, сделки, скачок Bybit/Binance, сила) прибыльные и убыточные живые покупки.
+# v2 (osize). Различают ли признаки момента сигнала (книга, сделки, скачок Bybit/Binance, сила) прибыльные и убыточные живые покупки.
 set -u
 ulimit -v 2300000 2>/dev/null || true
 export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
