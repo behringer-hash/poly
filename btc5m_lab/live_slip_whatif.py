@@ -60,7 +60,7 @@ def main():
     for c in sorted({best[0], max(best[0] - 50, 0), best[0] + 50}):
         print(f"\n=== что если переплата больше на k ц (c={c}) ===")
         rows = []
-        for k in (0, 1, 2, 3, 4, 5, 7, 10):
+        for k in (0, 3, 5, 7, 10, 13, 17):
             f = [fill(r, c, k) for r in d.itertuples()]
             ok = np.array([x[0] for x in f])
             px = np.array([x[1] for x in f])
