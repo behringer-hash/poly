@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # interval_min: 60
-# Сводка недельного живого теста: путь pnl по суткам и общая статистика ордеров. Данные: /home/lab/incoming/bot_data_c1_w (копия папки бота).
-D=/home/lab/incoming/bot_data_c1_w
+# Сводка недельного живого теста: путь pnl по суткам и общая статистика ордеров. Данные: /home/lab/incoming/bot_data_c1_s20 (копия папки бота).
+D=/home/lab/incoming/bot_data_c1_s20
 [ -d "$D" ] || { echo "нет $D (живой тест не запущен или данные не скопированы)"; exit 0; }
 cd btc5m_lab || exit 0
 "$PYTHON" daypnl_path.py "$D" 2>&1 | cut -c1-200 | head -c 3000
