@@ -17,4 +17,17 @@ else:
     print(f"\nордеров {len(d)}, исполнено {int(d.filled_f.sum())} ({d.filled_f.mean():.1%}), http_ms медиана {d.http_ms.astype(float).median():.0f}")
     g = d.groupby("day").agg(ордеров=("filled_f", "size"), исполнено=("filled_f", "sum"), доля=("filled_f", "mean"))
     print(g.round(3).to_string())
+    try:
+        from live_subgroups import table
+        t = table(sys.argv[1], "w")
+        t["slip"] = pd.to_numeric(t.slip_c, errors="coerce")
+        rows = []
+        for k, x in t.groupby("slip"):
+            f = x[x.filled_f]
+            rows.append(dict(доплата_ц=k, ордеров=len(x), исполнено=round(x.filled_f.mean(), 3), ц_шейр=round(f.pnl.sum() / max(f.fsh.sum(), 1) * 100, 2),
+                             долл=round(x.pnl.sum(), 2), ц_на_ордер=round(x.pnl.sum() / x["size"].astype(float).sum() * 100, 2)))
+        print("\nпо доплате (ордера с известным победителем):")
+        print(pd.DataFrame(rows).to_string(index=False))
+    except Exception as e:
+        print("по доплате: нет данных", repr(e)[:100])
 PY
