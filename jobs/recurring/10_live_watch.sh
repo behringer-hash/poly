@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # interval_min: 60
-# Сводка недельного живого теста: путь pnl по суткам и общая статистика ордеров. Данные: /home/lab/incoming/bot_data_c1_s20 (копия папки бота).
+# Сводка недельного живого теста: путь pnl по суткам и общая статистика ордеров. Данные: /home/lab/incoming/bot_data_c1_w (копия папки бота).
 cd btc5m_lab || exit 0
-for D in /home/lab/incoming/bot_data_c1_s20 /home/lab/incoming/bot_data_c2; do
+for D in /home/lab/incoming/bot_data_c1_w /home/lab/incoming/bot_data_c2; do
 [ -d "$D" ] || { echo "нет $D (бот не запущен или данные не скопированы)"; continue; }
 echo; echo "######## $D"
 "$PYTHON" daypnl_path.py "$D" 2>&1 | cut -c1-200 | head -c 3000
