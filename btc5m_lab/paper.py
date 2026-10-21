@@ -320,9 +320,12 @@ class Paper:
             log("paper", f"окно {win.slug} закрыто, победитель {winner} ({used})")
             self.print_summary()
 
-    def print_summary(self):
+    def print_summary(self, only=None):
+        """only - (вариант, задержка): показать только этот счёт (в живом режиме остальные бумажные режимы не нужны)."""
         lines = ["вариант      задерж.  сигналы  исполн.  доля   маркаут5с(ц)  окон   PnL $"]
         for (name, L), a in self.acc.items():
+            if only is not None and (name, L) != tuple(only):
+                continue
             tried = a.fills + a.misses
             fr = a.fills / tried if tried else 0
             mk = a.mk_sum / a.mk_n if a.mk_n else float("nan")

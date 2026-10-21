@@ -65,6 +65,7 @@ class BotUI:
             if self.main[1] not in cfg.latencies_ms:
                 raise SystemExit(f"задержки {self.main[1]} мс нет в --latencies {cfg.latencies_ms}")
         self.windows_done = 0
+        self.only_main = False        # в живом режиме показываем только основной бумажный счёт
 
     def shown(self, variant, L=None):
         if self.show_all:
@@ -134,7 +135,7 @@ class BotUI:
         if self.chart is not None:
             self.chart.add_window_result(win.start, r["pnl"] if r else 0.0, acc.pnl, winner)
         if self.show_all or self.windows_done % 3 == 1:
-            self.pm.paper.print_summary()
+            self.pm.paper.print_summary(only=self.main if self.only_main else None)
 
     # ---- периодический статус
     def position(self, slug):
@@ -440,7 +441,33 @@ def parse():
         cfg.variants = chosen
     for v in cfg.variants:
         v.clip = a.clip
+    if a.live:
+        apply_live_params(cfg, a)
     return cfg, a
+
+
+def apply_live_params(cfg, a):
+    """Бумажный счёт в консоли повторяет параметры живого режима: тот же вариант, размер ордера и фиксированная доплата;
+    остальные варианты не показываем и не считаем."""
+    from live import load_config
+    lcfg = load_config(a.live)
+    mode = (lcfg.get("slippage_mode") or ("random" if lcfg.get("slippage_choices") else "fixed")).lower()
+    if mode == "fixed":
+        cfg.slippage_ticks = int(round(float(lcfg.get("slippage_cents", 0) or 0)))
+    mine = [v for v in cfg.variants if v.name == lcfg["variant"]]
+    if mine:
+        cfg.variants = mine
+        for v in mine:
+            v.clip = float(lcfg["size"])
+        name, _, lat = a.show.partition("@")
+        try:
+            L = int(lat)
+        except ValueError:
+            L = cfg.latencies_ms[0]
+        if name != lcfg["variant"] or L not in cfg.latencies_ms:
+            L = L if L in cfg.latencies_ms else cfg.latencies_ms[0]
+        a.show = f"{lcfg['variant']}@{L}"
+    a.live_only_main = True
 
 
 def main():
@@ -454,6 +481,7 @@ def main():
     pmx.w.write = lambda s, r: orig_write(s, r) if s in KEEP_STREAMS else None  # сырые данные не пишем
     chart = None if (a.no_chart and not a.chart_snapshot) else LiveChart("", snapshot=a.chart_snapshot or None)
     ui = BotUI(cfg, pmx, a.show, chart)
+    ui.only_main = bool(getattr(a, "live_only_main", False))
     if chart is not None:
         chart.title = f"[{ui.main[0]} @{ui.main[1]}мс]"
         if cfg.paper_btc_source not in ("bybit", "coinbase"):
@@ -472,8 +500,9 @@ def main():
                           "за сутки. Аварийная остановка: создать файл {stop_file} в папке программы.".format(**lcfg)))
             if input("Введите ДА, чтобы начать реальную торговлю: ").strip().upper() != "ДА":
                 raise SystemExit("отменено")
-        emit(C.c(C.M, f"Бумажные счета торгуют клипом {a.clip:.0f} шейров (ключ --clip); живые ордера - "
-                      f"{lcfg['size']} шейров (size в {a.live}). Живые ордера в консоли помечены [LIVE ...]."))
+        emit(C.c(C.M, f"Бумажный счёт повторяет параметры живого режима: вариант {lcfg['variant']}, "
+                      f"{lcfg['size']} шейров на ордер, доплата +{cfg.slippage_ticks} ц (режим доплаты {lcfg.get('slippage_mode') or 'fixed'}), "
+                      f"счёт @{ui.main[1]} мс. Другие бумажные режимы не показываются. Живые ордера помечены [LIVE ...]."))
         trader = LiveTrader(lcfg, a.mode, pmx, pmx.w, ui)
         trader.connect()
         pmx.paper.listener = Fanout(ui, trader)

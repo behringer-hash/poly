@@ -550,7 +550,10 @@ class LiveTrader:
         # сравнение с бумагой по тем же сигналам
         sids = [sid for sid in self.live_by_sid if sid in self.paper_by_sid]
         lines = []
+        only_L = self.ui.main[1] if (self.ui is not None and getattr(self.ui, "only_main", False)) else None
         for L in sorted({L for sid in sids for L in self.paper_by_sid[sid]}):
+            if only_L is not None and L != only_L:
+                continue
             both = [(self.live_by_sid[sid], self.paper_by_sid[sid].get(L)) for sid in sids
                     if self.paper_by_sid[sid].get(L)]
             if both:
