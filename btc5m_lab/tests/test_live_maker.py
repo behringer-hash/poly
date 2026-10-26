@@ -236,3 +236,11 @@ def test_several_orders_per_side_when_allowed():
     run(go())
     assert len(cl.posted) == 2 and sorted(cl.canceled) == ["O1", "O2"] and not t.open
     assert t.win_stats[win.slug]["shares"]["Up"] == 10
+
+
+def test_test_only_config_refuses_live():
+    import pytest
+    with pytest.raises(SystemExit):
+        trader("live", Client(), test_only=True)
+    t, _ = trader("sign", None, test_only=True)          # sign и dry - можно
+    assert t.mode == "sign"

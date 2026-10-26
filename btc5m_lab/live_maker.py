@@ -71,6 +71,8 @@ class ShadowHook:
 
 class MakerTrader(LiveTrader):
     def __init__(self, lcfg: dict, mode: str, pm, writer, ui=None):
+        if mode == "live" and lcfg.get("test_only"):
+            raise SystemExit("этот файл настроек помечен test_only (без лимитов) - он только для режимов dry и sign")
         super().__init__(lcfg, mode, pm, writer, ui)
         self.post_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="mk-post")
         self.aux_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="mk-aux")
