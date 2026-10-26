@@ -244,3 +244,23 @@ def test_test_only_config_refuses_live():
         trader("live", Client(), test_only=True)
     t, _ = trader("sign", None, test_only=True)          # sign и dry - можно
     assert t.mode == "sign"
+
+
+def test_maker_bot_builds_signal_only_config():
+    import maker_bot
+    cfg = maker_bot.build_cfg(dict(variant="c1", signal_edge=0.035, signal_source="bybit", signal_sigma_mult=1.0), "d")
+    v = cfg.variants[0]
+    assert v.name == "c1" and v.model == "anchor" and v.edge_thr == 0.035 and v.source == "bybit"
+    assert cfg.latencies_ms == [] and cfg.paper and not cfg.backup_clob      # бумажных сделок нет, только сигнал
+
+
+def test_signal_engine_without_paper_fills_calls_listener():
+    from types import SimpleNamespace
+    import maker_bot
+    from paper import Paper
+    cfg = maker_bot.build_cfg(dict(variant="c1"), "d")
+    seen = []
+    p = Paper(cfg, SimpleNamespace(), None)
+    p.listener = SimpleNamespace(on_settle=lambda *a: seen.append(a))
+    p.settle(SimpleNamespace(slug="x"), "Up", "provisional")
+    assert p.acc == {} and len(seen) == 1
