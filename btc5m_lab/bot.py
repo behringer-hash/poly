@@ -494,6 +494,11 @@ def main():
             raise SystemExit(f"вариант {lcfg['variant']} из конфига не торгуется ботом (--variants)")
         pmx.w.schemas.update(LIVE_SCHEMAS)
         KEEP_STREAMS.update(set(LIVE_SCHEMAS) | {"pm_trades"})  # pm_trades - найти свои сделки
+        maker_exec = str(lcfg.get("execution", "")).lower() == "maker"   # исполнение пассивными заявками (live_maker.py)
+        if maker_exec:
+            from live_maker import MAKER_LIVE_SCHEMAS
+            pmx.w.schemas.update(MAKER_LIVE_SCHEMAS)
+            KEEP_STREAMS.update(MAKER_LIVE_SCHEMAS)
         if a.mode == "live":
             emit(C.c(C.R, "РЕАЛЬНАЯ ТОРГОВЛЯ. Вариант {variant}, {size} шейров на ордер; лимиты: {max_orders_per_window} "
                           "ордеров и ${max_spend_per_window} на окно, ${max_spend_per_day} и убыток ${max_loss_per_day} "
@@ -503,7 +508,12 @@ def main():
         emit(C.c(C.M, f"Бумажный счёт повторяет параметры живого режима: вариант {lcfg['variant']}, "
                       f"{lcfg['size']} шейров на ордер, доплата +{cfg.slippage_ticks} ц (режим доплаты {lcfg.get('slippage_mode') or 'fixed'}), "
                       f"счёт @{ui.main[1]} мс. Другие бумажные режимы не показываются. Живые ордера помечены [LIVE ...]."))
-        trader = LiveTrader(lcfg, a.mode, pmx, pmx.w, ui)
+        if maker_exec:
+            from live_maker import MakerTrader
+            trader = MakerTrader(lcfg, a.mode, pmx, pmx.w, ui)
+            pmx.maker = trader.hook          # сделки рынка -> теневое исполнение заявок
+        else:
+            trader = LiveTrader(lcfg, a.mode, pmx, pmx.w, ui)
         trader.connect()
         pmx.paper.listener = Fanout(ui, trader)
     else:
@@ -529,6 +539,7 @@ def main():
                       f"задержки: {cfg.latencies_ms} мс; подробно показываю [{ui.main[0]} @{ui.main[1]}мс]. "
                       f"Сделки пишутся в {os.path.abspath(cfg.data_dir)}"))
         extra = [trader.keepalive(), trader.warm_loop(), trader.presign_loop()] if trader is not None else []
+        extra += trader.extra_tasks() if hasattr(trader, "extra_tasks") else []
         await asyncio.gather(pmx.main(), sampler(), ui.status_loop(), *extra)
 
     def worker():
