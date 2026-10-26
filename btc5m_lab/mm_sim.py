@@ -58,6 +58,8 @@ def next_change(v: np.ndarray) -> np.ndarray:
     """Для каждого индекса i - первый индекс j > i, где v[j] != v[i] (len(v), если такого нет)."""
     v = np.where(np.isfinite(v), v, -1.0)
     ch = np.flatnonzero(v[1:] != v[:-1]) + 1
+    if len(ch) == 0:
+        return np.full(len(v), len(v))
     k = np.searchsorted(ch, np.arange(len(v)), side="right")
     return np.where(k < len(ch), ch[np.minimum(k, len(ch) - 1)], len(v))
 
@@ -286,20 +288,25 @@ def main():
                 continue
             sig_t, sig_v = per_sec_sigma(bt, bp)
             dep, tr = Depth(root), Trades(root)
-            wrows, frows = [], []
+            wrows, frows, bad = [], [], []
             for w in sorted(winners):
                 if w not in pm.by_w:
                     continue
-                win = Win(w, pm, tr, {})
-                if len(win.rt) < 10:
-                    continue
-                win.sig = signals(win, bt, bp, sig_t, sig_v, thetas)
-                won = {"U": 1.0 if winners[w] == "Up" else 0.0, "D": 1.0 if winners[w] == "Down" else 0.0}
-                for queue, th in VARIANTS:
-                    var = f"{queue}_{'nosig' if th is None else f'sig{round(th * 1000)}'}"
-                    r, f = run_window(win, dep, queue, th, won, day, var)
-                    wrows.append(r)
-                    frows += f
+                try:
+                    win = Win(w, pm, tr, {})
+                    if len(win.rt) < 10:
+                        continue
+                    win.sig = signals(win, bt, bp, sig_t, sig_v, thetas)
+                    won = {"U": 1.0 if winners[w] == "Up" else 0.0, "D": 1.0 if winners[w] == "Down" else 0.0}
+                    for queue, th in VARIANTS:
+                        var = f"{queue}_{'nosig' if th is None else f'sig{round(th * 1000)}'}"
+                        r, f = run_window(win, dep, queue, th, won, day, var)
+                        wrows.append(r)
+                        frows += f
+                except Exception as ex:          # одно окно не должно ронять весь день
+                    bad.append(f"{w}: {ex!r}"[:120])
+            if bad:
+                print(f"{day}: пропущено окон из-за ошибок {len(bad)}, первая: {bad[0]}", flush=True)
             W, F = pd.DataFrame(wrows), pd.DataFrame(frows)
             W.to_csv(os.path.join(a.out, f"mmwin_{day}.csv.gz"), index=False)
             F.to_csv(os.path.join(a.out, f"mmfill_{day}.csv.gz"), index=False)
