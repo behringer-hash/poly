@@ -33,8 +33,31 @@ def _wallet(cfg):
     wallet.run(cfg)
 
 
+EXTRA_FEEDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "collector_extra_feeds.txt")
+
+
+def add_feeds_from_file(cfg, path: str = EXTRA_FEEDS_FILE):
+    """Служба записи (--no-paper): дополнительные биржевые потоки из файла рядом с run.py, через запятую или по строкам,
+    # - комментарий. Так набор потоков меняется через репозиторий, без правки unit-файла службы (его меняет только
+    администратор). Неизвестные имена пропускаются."""
+    if cfg.paper or not os.path.exists(path):
+        return []
+    from feeds_extra import FEEDS
+    names = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            names += [x.strip() for x in line.split("#")[0].split(",") if x.strip()]
+    add = [n for n in names if n in FEEDS and n not in cfg.extra_feeds]
+    cfg.extra_feeds = list(cfg.extra_feeds) + add
+    skipped = [n for n in names if n not in FEEDS]
+    print(f"[run] доп. потоки из {os.path.basename(path)}: {add or 'нет новых'}"
+          + (f"; неизвестные пропущены: {skipped}" if skipped else ""), flush=True)
+    return add
+
+
 def main():
     cfg = parse_args()
+    add_feeds_from_file(cfg)
     restore_console = lambda: None
     if cfg.no_quickedit:
         from common import disable_quick_edit

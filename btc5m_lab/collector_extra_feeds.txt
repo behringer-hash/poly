@@ -1,0 +1,3 @@
+# Доп. потоки службы записи (run.py --no-paper), см. run.add_feeds_from_file
+# фьючерс Binance bookTicker: самый ранний признак движения BTC (для хронометража маркет-мейкинга)
+binance_futures_book
