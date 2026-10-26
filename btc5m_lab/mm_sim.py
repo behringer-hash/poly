@@ -198,10 +198,13 @@ def run_window(win: Win, dep: Depth, queue: str, theta, won: dict, day: str, var
             return
         if queue == "front":
             ahead = 0.0
-        else:
+        elif np.isfinite(sb) and abs(sb - q) < 1e-9:
+            ahead = ssz if np.isfinite(ssz) else 1e9     # объём на лучшем bid на сервере в момент постановки: мы за ним
+        elif np.isfinite(sb) and sb < q:
+            ahead = 0.0                                  # уровень на сервере уже ушёл: мы одни на этой цене
+        else:                                            # на сервере лучший bid выше нашей цены - мы глубже в книге
             ahead = dep.bid_size_at(w, X, ta + 43.0, q)
-            if not np.isfinite(ahead):
-                ahead = ssz if np.isfinite(sb) and abs(sb - q) < 1e-9 else 1e9
+            ahead = ahead if np.isfinite(ahead) and ahead > 0 else 1e9
         # естественный конец заявки
         end, reason, nxt_dec = t_stop + PLACE_MS, "stop", INF
         if t_next + PLACE_MS < end:
