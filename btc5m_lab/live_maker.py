@@ -76,6 +76,7 @@ class MakerTrader(LiveTrader):
         self.open: dict[tuple, dict] = {}        # (slug, outcome) -> состояние заявки
         self.errors = 0
         self.hook = ShadowHook(self)
+        self.watchdog_every = 5.0
         self.mstats = dict(signals=0, placed=0, skipped=0, filled=0, shares=0.0, shadow_filled=0, shadow_shares=0.0)
 
     def m(self, key):
@@ -422,7 +423,27 @@ class MakerTrader(LiveTrader):
 
     # ------------------------------------------------------------------ приватный канал заявок
     def extra_tasks(self):
-        return [self.user_ws(), self.stats_loop()]
+        return [self.user_ws(), self.stats_loop(), self.watchdog_loop()]
+
+    async def watchdog_loop(self):
+        """Заявка, по которой давно нет итога (сеть, сбой потока), не должна вечно занимать место и резерв:
+        снимаем все свои заявки, закрываем её как неизвестную (PnL уточнит сверка) и останавливаемся."""
+        self.loop = asyncio.get_running_loop()
+        while True:
+            await asyncio.sleep(self.watchdog_every)
+            limit = float(self.m("maker_life_sec")) + 30.0
+            for e in [e for e in list(self.open.values()) if clock.now() - e["t_signal"] > limit]:
+                self._halt(f"заявка #{e['sid']} без итога дольше {limit:.0f} с")
+                if self.mode == "live" and self.client is not None:
+                    self.loop.run_in_executor(self.aux_pool, self._cancel_all_quiet)
+                self._final(e, dict(t_cancel=clock.now(), cancel_ms=None, cancel_status="watchdog", size_matched=None,
+                                    order_status="", err="нет итога"))
+
+    def _cancel_all_quiet(self):
+        try:
+            self.client.cancel_all()
+        except Exception as ex:
+            log("maker", f"cancel_all не удался: {ex!r}"[:160])
 
     async def user_ws(self):
         if self.mode != "live" or self.client is None:

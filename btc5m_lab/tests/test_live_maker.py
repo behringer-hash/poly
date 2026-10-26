@@ -206,3 +206,20 @@ def test_settle_has_no_fee_for_maker():
         t.on_settle(win, "Up", "provisional", {})
     run(go())
     assert abs(t.total_pnl - (5.0 - 2.45)) < 1e-9
+
+
+def test_watchdog_halts_on_stuck_order():
+    t, win = trader("live", Client(), maker_life_sec=0.0)
+    t.watchdog_every = 0.02
+    t.mode = "live"
+
+    async def go():
+        st = t.win_stats.setdefault(win.slug, t._new_st())
+        st["pending"]["Up"] = 5
+        t.open[(win.slug, "Up")] = dict(sid=9, slug=win.slug, outcome="Up", t_signal=clock.now() - 100, q=0.49, size=5,
+                                        oid="O9", shadow_qty=0.0, shadow_ms=None)
+        task = asyncio.create_task(t.watchdog_loop())
+        await asyncio.sleep(0.1)
+        task.cancel()
+    run(go())
+    assert not t.open and "без итога" in (t.stopped_reason or "") and t.win_stats[win.slug]["pending"]["Up"] == 0
