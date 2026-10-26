@@ -1,0 +1,60 @@
+== служба: active / автозапуск: disabled
+MainPID=850707
+NRestarts=0
+ActiveEnterTimestamp=Mon 2026-10-26 13:22:26 UTC
+ExecStart=/home/lab/venv/bin/python run.py --no-paper --no-wallet --extra-feeds binance_futures,bybit,bybit_book,bybit_spot,bybit_spot_book,okx,binance_liq,bybit_liq --binance-streams aggTrade,depth5 --data-dir /home/lab/data
+== через 150 с: active
+NRestarts=0
+ActiveEnterTimestamp=Mon 2026-10-26 13:22:26 UTC
+== свежесть потоков в /home/lab/data/2026-10-26 (возраст последней записи, с; строк в текущем часовом файле)
+bn_agg_13.csv                возраст    2 с, строк     2630
+bn_book_13.csv               возраст   10 с, строк       34
+bnf_agg_13.csv               возраст    2 с, строк     1638
+bnf_book_13.csv              возраст    1 с, строк    65257
+bnf_liq_13.csv               возраст   10 с, строк        9
+by_book1_13.csv              возраст    2 с, строк     3524
+by_liq_13.csv                возраст   12 с, строк       12
+by_trade_13.csv              возраст    2 с, строк     4290
+bys_book1_13.csv             возраст    2 с, строк     1598
+bys_trade_13.csv             возраст    2 с, строк     2131
+cb_ticker_13.csv             возраст    2 с, строк      771
+clock_13.csv                 возраст   16 с, строк        4
+clock_pm_13.csv              возраст   22 с, строк        4
+events_13.csv                возраст  100 с, строк       13
+health_cex_13.csv            возраст    4 с, строк       15
+health_feeds_13.csv          возраст    4 с, строк      127
+health_pm_13.csv             возраст    2 с, строк       16
+ok_trade_13.csv              возраст    2 с, строк     3260
+pm_depth_13.csv              возраст    2 с, строк      575
+pm_rtt_13.csv                возраст    4 с, строк       63
+pm_top_13.csv                возраст    2 с, строк     1894
+pm_trades_13.csv             возраст    2 с, строк      375
+rtds_13.csv                  возраст    2 с, строк      683
+== ожидаемые потоки Binance:
+bn_agg: +350 строк за 10 с; последняя строка: 1793021107842,1793021107719,80009.98000000,0.002,0
+bn_book: +5 строк за 10 с; последняя строка: 1793021116136,80000.00000000,5.03573000,80000.01000000,10.73504000
+bnf_agg: +373 строк за 10 с; последняя строка: 1793021127808,1793021127658,1793021127669,79954.70,0.036,0
+bnf_book: +3777 строк за 10 с; последняя строка: 1793021139263,1793021139139,1793021139139,11927521983805,79971.40,18.643,79971.50,1.219
+== задержки из журнала записи (последние строки [cex]):
+Oct 26 13:25:15 ip-172-26-8-188 python[850712]: 13:25:15 [cex] Binance 187 сд. задержка p50/p90=142.4/149.8 мс | Coinbase 32 задержка p50=80.6 мс | смещение часов +19.1 мс | lag loop p99/max=12.2/20.1 мс
+Oct 26 13:25:15 ip-172-26-8-188 python[850712]: 13:25:15 [cex] binance_futures 299 сд. p50=151.4 мс | bybit 298 сд. p50=121.1 мс | bybit_book 257 сд. p50=109.0 мс | bybit_spot 214 сд. p50=112.1 мс | bybit_spot_book 214 сд. p50=109.4 мс | okx 215 сд. p50=155.1 мс | binance_liq 2 сд. p50=1146.5 мс | bybit_liq 2 сд. p50=301.5 мс | binance_futures_book 7320 сд. p50=14
+Oct 26 13:25:25 ip-172-26-8-188 python[850712]: 13:25:25 [cex] Binance 243 сд. задержка p50/p90=146.4/177.4 мс | Coinbase 54 задержка p50=82.1 мс | смещение часов +19.1 мс | lag loop p99/max=11.2/51.4 мс
+Oct 26 13:25:25 ip-172-26-8-188 python[850712]: 13:25:25 [cex] binance_futures 338 сд. p50=156.8 мс | bybit 559 сд. p50=146.2 мс | bybit_book 257 сд. p50=109.0 мс | bybit_spot 292 сд. p50=122.5 мс | bybit_spot_book 126 сд. p50=109.5 мс | okx 331 сд. p50=155.9 мс | binance_liq 2 сд. p50=1146.5 мс | bybit_liq 1 сд. p50=322.4 мс | binance_futures_book 9474 сд. p50=14
+Oct 26 13:25:35 ip-172-26-8-188 python[850712]: 13:25:35 [cex] Binance 426 сд. задержка p50/p90=142.9/151.1 мс | Coinbase 68 задержка p50=81.1 мс | смещение часов +19.1 мс | lag loop p99/max=3.6/12.0 мс
+Oct 26 13:25:35 ip-172-26-8-188 python[850712]: 13:25:35 [cex] binance_futures 273 сд. p50=159.0 мс | bybit 546 сд. p50=122.5 мс | bybit_book 294 сд. p50=108.9 мс | bybit_spot 266 сд. p50=114.2 мс | bybit_spot_book 194 сд. p50=109.5 мс | okx 443 сд. p50=155.5 мс | binance_liq 2 сд. p50=1148.5 мс | bybit_liq 1 сд. p50=390.4 мс | binance_futures_book 7706 сд. p50=14
+== нагрузка
+0.27 0.18 0.12 2/201 851101
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st gu
+ 1  0  78408 1016668  21680 513600    8   11    21    63 2261    7  8  1 91  0  0  0
+ 1  0  78408 1016620  21680 513848    0    0     0     0 7667 6132 28  6 66  0  0  0
+ 2  0  78408 1016116  21688 514140    0    0     2  1012 7072 6243 27  4 69  0  0  0
+ 2  0  78408 1014856  21688 514272    0    0     0     0 8230 5805 36  6 58  0  0  0
+ 0  0  78408 1014856  21688 514444    0    0     0     0 7427 5614 27  5 68  0  0  0
+    PID USER     %CPU %MEM     ELAPSED COMMAND
+ 850712 lab      16.5  3.8       03:20 /home/lab/venv/bin/python run.py --no-paper --no-wallet --extra-feeds binance_futures,bybit,bybit_book,bybit_spot,bybit_s
+ 850713 lab      13.3  2.5       03:20 /home/lab/venv/bin/python run.py --no-paper --no-wallet --extra-feeds binance_futures,bybit,bybit_book,bybit_spot,bybit_s
+ 845306 ubuntu   11.0  5.8    01:55:02 python3 -u maker_bot.py --config config_sign_test.json --mode sign --data-dir data_sign
+ 850707 lab       0.0  1.3       03:20 /home/lab/venv/bin/python run.py --no-paper --no-wallet --extra-feeds binance_futures,bybit,bybit_book,bybit_spot,bybit_s
+    638 root      0.0  0.2 26-06:01:29 /usr/bin/python3 /usr/bin/networkd-dispatcher --run-startup-triggers
+    681 root      0.0  0.1 26-06:01:28 /usr/bin/python3 /usr/share/unattended-upgrades/unattended-upgrade-shutdown --wait-for-signal
+ 851105 lab       0.0  0.1       00:00 grep -E python|PID
