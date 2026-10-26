@@ -77,7 +77,7 @@ class MakerTrader(LiveTrader):
         self.errors = 0
         self.hook = ShadowHook(self)
         self.watchdog_every = 5.0
-        self.mstats = dict(signals=0, placed=0, skipped=0, filled=0, shares=0.0, shadow_filled=0, shadow_shares=0.0)
+        self.mstats = dict(signals=0, placed=0, skipped=0, filled=0, shares=0.0, shadow_filled=0, shadow_shares=0.0, trades_seen=0)
 
     def m(self, key):
         return self.c.get(key, MAKER_DEFAULTS[key])
@@ -354,6 +354,7 @@ class MakerTrader(LiveTrader):
 
     # ------------------------------------------------------------------ теневое исполнение по сделкам рынка
     def on_market_trade(self, win, oc, side, price, size, sts):
+        self.mstats["trades_seen"] += 1          # контроль: сделки рынка до нас доходят
         if not self.open:
             return
         try:
@@ -497,7 +498,7 @@ class MakerTrader(LiveTrader):
             s = self.mstats
             emit(f"\033[96m[MAKER] с запуска: сигналов {s['signals']}, поставлено {s['placed']}, пропущено {s['skipped']}, "
                  f"исполнено {s['filled']} заявок ({s['shares']:.0f} шт), теневых исполнений {s['shadow_filled']} "
-                 f"({s['shadow_shares']:.0f} шт) | PnL с запуска {self.total_pnl:+.2f}$\033[0m")
+                 f"({s['shadow_shares']:.0f} шт), сделок рынка получено {s['trades_seen']} | PnL с запуска {self.total_pnl:+.2f}$\033[0m")
 
     # ------------------------------------------------------------------ итог окна (комиссии мейкера нет)
     def on_settle(self, win, winner, used, results):
