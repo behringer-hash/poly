@@ -1,0 +1,325 @@
+== копия папки бота: /home/lab/incoming/bot_data_c1_w
+52M	/home/lab/incoming/bot_data_c1_w
+самые новые файлы:
+2026-10-26 11:40  245908  2026-10-26/pm_trades_11.csv.xz
+2026-10-26 11:40  3028  2026-10-26/paper_signals_11.csv.xz
+2026-10-26 11:40  308  2026-10-26/live_windows_11.csv.xz
+2026-10-26 11:40  324  2026-10-26/events_pm_11.csv.xz
+2026-10-26 11:40  412  2026-10-26/live_markouts_11.csv.xz
+2026-10-26 11:40  412  2026-10-26/paper_windows_11.csv.xz
+2026-10-26 11:40  452  2026-10-26/paper_markouts_11.csv.xz
+2026-10-26 11:40  932  2026-10-26/live_order_meta_11.csv.xz
+файлов по потокам:
+      6 events_pm_00.csv.xz
+      6 events_pm_01.csv.xz
+      6 events_pm_02.csv.xz
+      6 events_pm_03.csv.xz
+      6 events_pm_04.csv.xz
+      5 events_pm_05.csv.xz
+      6 events_pm_06.csv.xz
+      7 events_pm_07.csv.xz
+      6 events_pm_08.csv.xz
+      7 events_pm_09.csv.xz
+      7 events_pm_10.csv.xz
+      1 events_pm_11.csv
+      6 events_pm_11.csv.xz
+      5 events_pm_12.csv.xz
+      6 events_pm_13.csv.xz
+      6 events_pm_14.csv.xz
+      5 events_pm_15.csv.xz
+      7 events_pm_16.csv.xz
+      7 events_pm_17.csv.xz
+      6 events_pm_18.csv.xz
+      5 events_pm_19.csv.xz
+      6 events_pm_20.csv.xz
+      6 events_pm_21.csv.xz
+      6 events_pm_22.csv.xz
+      6 events_pm_23.csv.xz
+      6 live_markouts_00.csv.xz
+      6 live_markouts_01.csv.xz
+      6 live_markouts_02.csv.xz
+      6 live_markouts_03.csv.xz
+      5 live_markouts_04.csv.xz
+      5 live_markouts_05.csv.xz
+      5 live_markouts_06.csv.xz
+      7 live_markouts_07.csv.xz
+      7 live_markouts_08.csv.xz
+      7 live_markouts_09.csv.xz
+      7 live_markouts_10.csv.xz
+      1 live_markouts_11.csv
+      7 live_markouts_11.csv.xz
+      6 live_markouts_12.csv.xz
+      6 live_markouts_13.csv.xz
+      1 live_markouts_14.csv
+      5 live_markouts_14.csv.xz
+      1 live_markouts_15.csv
+      4 live_markouts_15.csv.xz
+      6 live_markouts_16.csv.xz
+      6 live_markouts_17.csv.xz
+      6 live_markouts_18.csv.xz
+      6 live_markouts_19.csv.xz
+      6 live_markouts_20.csv.xz
+      6 live_markouts_21.csv.xz
+      6 live_markouts_22.csv.xz
+      6 live_markouts_23.csv.xz
+      6 live_order_meta_00.csv.xz
+      6 live_order_meta_01.csv.xz
+      6 live_order_meta_02.csv.xz
+      6 live_order_meta_03.csv.xz
+      5 live_order_meta_04.csv.xz
+      5 live_order_meta_05.csv.xz
+      5 live_order_meta_06.csv.xz
+      7 live_order_meta_07.csv.xz
+      7 live_order_meta_08.csv.xz
+      7 live_order_meta_09.csv.xz
+      7 live_order_meta_10.csv.xz
+      1 live_order_meta_11.csv
+      7 live_order_meta_11.csv.xz
+      6 live_order_meta_12.csv.xz
+      6 live_order_meta_13.csv.xz
+      1 live_order_meta_14.csv
+      5 live_order_meta_14.csv.xz
+      1 live_order_meta_15.csv
+      4 live_order_meta_15.csv.xz
+      6 live_order_meta_16.csv.xz
+      6 live_order_meta_17.csv.xz
+      6 live_order_meta_18.csv.xz
+      6 live_order_meta_19.csv.xz
+      6 live_order_meta_20.csv.xz
+      6 live_order_meta_21.csv.xz
+      6 live_order_meta_22.csv.xz
+      6 live_order_meta_23.csv.xz
+      6 live_orders_00.csv.xz
+      6 live_orders_01.csv.xz
+      6 live_orders_02.csv.xz
+      6 live_orders_03.csv.xz
+      5 live_orders_04.csv.xz
+      5 live_orders_05.csv.xz
+      5 live_orders_06.csv.xz
+      7 live_orders_07.csv.xz
+      7 live_orders_08.csv.xz
+      7 live_orders_09.csv.xz
+      7 live_orders_10.csv.xz
+      1 live_orders_11.csv
+      7 live_orders_11.csv.xz
+      6 live_orders_12.csv.xz
+      6 live_orders_13.csv.xz
+      1 live_orders_14.csv
+      5 live_orders_14.csv.xz
+      1 live_orders_15.csv
+      4 live_orders_15.csv.xz
+      6 live_orders_16.csv.xz
+      6 live_orders_17.csv.xz
+      6 live_orders_18.csv.xz
+      6 live_orders_19.csv.xz
+      6 live_orders_20.csv.xz
+      6 live_orders_21.csv.xz
+      6 live_orders_22.csv.xz
+      6 live_orders_23.csv.xz
+      6 live_windows_00.csv.xz
+      6 live_windows_01.csv.xz
+      6 live_windows_02.csv.xz
+      6 live_windows_03.csv.xz
+      5 live_windows_04.csv.xz
+      5 live_windows_05.csv.xz
+      5 live_windows_06.csv.xz
+      7 live_windows_07.csv.xz
+      7 live_windows_08.csv.xz
+      7 live_windows_09.csv.xz
+      7 live_windows_10.csv.xz
+      1 live_windows_11.csv
+      7 live_windows_11.csv.xz
+      6 live_windows_12.csv.xz
+      6 live_windows_13.csv.xz
+      1 live_windows_14.csv
+      5 live_windows_14.csv.xz
+      1 live_windows_15.csv
+      4 live_windows_15.csv.xz
+      5 live_windows_16.csv.xz
+      6 live_windows_17.csv.xz
+      6 live_windows_18.csv.xz
+      6 live_windows_19.csv.xz
+      6 live_windows_20.csv.xz
+      6 live_windows_21.csv.xz
+      6 live_windows_22.csv.xz
+      6 live_windows_23.csv.xz
+      6 paper_fills_00.csv.xz
+      6 paper_fills_01.csv.xz
+      6 paper_fills_02.csv.xz
+      6 paper_fills_03.csv.xz
+      6 paper_fills_04.csv.xz
+      6 paper_fills_05.csv.xz
+      6 paper_fills_06.csv.xz
+      7 paper_fills_07.csv.xz
+      7 paper_fills_08.csv.xz
+      7 paper_fills_09.csv.xz
+      7 paper_fills_10.csv.xz
+      1 paper_fills_11.csv
+      7 paper_fills_11.csv.xz
+      6 paper_fills_12.csv.xz
+      6 paper_fills_13.csv.xz
+      6 paper_fills_14.csv.xz
+      5 paper_fills_15.csv.xz
+      7 paper_fills_16.csv.xz
+      7 paper_fills_17.csv.xz
+      6 paper_fills_18.csv.xz
+      6 paper_fills_19.csv.xz
+      6 paper_fills_20.csv.xz
+      6 paper_fills_21.csv.xz
+      6 paper_fills_22.csv.xz
+      6 paper_fills_23.csv.xz
+      6 paper_markouts_00.csv.xz
+      6 paper_markouts_01.csv.xz
+      6 paper_markouts_02.csv.xz
+      6 paper_markouts_03.csv.xz
+      6 paper_markouts_04.csv.xz
+      6 paper_markouts_05.csv.xz
+      6 paper_markouts_06.csv.xz
+      7 paper_markouts_07.csv.xz
+      7 paper_markouts_08.csv.xz
+      7 paper_markouts_09.csv.xz
+      7 paper_markouts_10.csv.xz
+      1 paper_markouts_11.csv
+      7 paper_markouts_11.csv.xz
+      6 paper_markouts_12.csv.xz
+      6 paper_markouts_13.csv.xz
+      6 paper_markouts_14.csv.xz
+      5 paper_markouts_15.csv.xz
+      7 paper_markouts_16.csv.xz
+      7 paper_markouts_17.csv.xz
+      6 paper_markouts_18.csv.xz
+      6 paper_markouts_19.csv.xz
+      6 paper_markouts_20.csv.xz
+      6 paper_markouts_21.csv.xz
+      6 paper_markouts_22.csv.xz
+      6 paper_markouts_23.csv.xz
+      6 paper_signals_00.csv.xz
+      6 paper_signals_01.csv.xz
+      6 paper_signals_02.csv.xz
+      6 paper_signals_03.csv.xz
+      6 paper_signals_04.csv.xz
+      6 paper_signals_05.csv.xz
+      6 paper_signals_06.csv.xz
+      7 paper_signals_07.csv.xz
+      7 paper_signals_08.csv.xz
+      7 paper_signals_09.csv.xz
+      7 paper_signals_10.csv.xz
+      1 paper_signals_11.csv
+      7 paper_signals_11.csv.xz
+      6 paper_signals_12.csv.xz
+      6 paper_signals_13.csv.xz
+      6 paper_signals_14.csv.xz
+      5 paper_signals_15.csv.xz
+      7 paper_signals_16.csv.xz
+      7 paper_signals_17.csv.xz
+      6 paper_signals_18.csv.xz
+      6 paper_signals_19.csv.xz
+      6 paper_signals_20.csv.xz
+      6 paper_signals_21.csv.xz
+      6 paper_signals_22.csv.xz
+      6 paper_signals_23.csv.xz
+      6 paper_windows_00.csv.xz
+      6 paper_windows_01.csv.xz
+      6 paper_windows_02.csv.xz
+      6 paper_windows_03.csv.xz
+      6 paper_windows_04.csv.xz
+      6 paper_windows_05.csv.xz
+      6 paper_windows_06.csv.xz
+      7 paper_windows_07.csv.xz
+      7 paper_windows_08.csv.xz
+      7 paper_windows_09.csv.xz
+      7 paper_windows_10.csv.xz
+      1 paper_windows_11.csv
+      7 paper_windows_11.csv.xz
+      6 paper_windows_12.csv.xz
+      6 paper_windows_13.csv.xz
+      6 paper_windows_14.csv.xz
+      5 paper_windows_15.csv.xz
+      6 paper_windows_16.csv.xz
+      7 paper_windows_17.csv.xz
+      6 paper_windows_18.csv.xz
+      6 paper_windows_19.csv.xz
+      6 paper_windows_20.csv.xz
+      6 paper_windows_21.csv.xz
+      6 paper_windows_22.csv.xz
+      6 paper_windows_23.csv.xz
+      6 pm_trades_00.csv.xz
+      6 pm_trades_01.csv.xz
+      6 pm_trades_02.csv.xz
+      6 pm_trades_03.csv.xz
+      6 pm_trades_04.csv.xz
+      6 pm_trades_05.csv.xz
+      6 pm_trades_06.csv.xz
+      7 pm_trades_07.csv.xz
+      7 pm_trades_08.csv.xz
+      7 pm_trades_09.csv.xz
+      7 pm_trades_10.csv.xz
+      1 pm_trades_11.csv
+      7 pm_trades_11.csv.xz
+      6 pm_trades_12.csv.xz
+      6 pm_trades_13.csv.xz
+      6 pm_trades_14.csv.xz
+      5 pm_trades_15.csv.xz
+      7 pm_trades_16.csv.xz
+      7 pm_trades_17.csv.xz
+      6 pm_trades_18.csv.xz
+      6 pm_trades_19.csv.xz
+      6 pm_trades_20.csv.xz
+      6 pm_trades_21.csv.xz
+      6 pm_trades_22.csv.xz
+      6 pm_trades_23.csv.xz
+      6 windows_00.csv.xz
+      6 windows_01.csv.xz
+      6 windows_02.csv.xz
+      6 windows_03.csv.xz
+      6 windows_04.csv.xz
+      6 windows_05.csv.xz
+      6 windows_06.csv.xz
+      7 windows_07.csv.xz
+      7 windows_08.csv.xz
+      7 windows_09.csv.xz
+      7 windows_10.csv.xz
+      1 windows_11.csv
+      7 windows_11.csv.xz
+      6 windows_12.csv.xz
+      6 windows_13.csv.xz
+      6 windows_14.csv.xz
+      5 windows_15.csv.xz
+      7 windows_16.csv.xz
+      7 windows_17.csv.xz
+      6 windows_18.csv.xz
+      6 windows_19.csv.xz
+      6 windows_20.csv.xz
+      6 windows_21.csv.xz
+      6 windows_22.csv.xz
+      6 windows_23.csv.xz
+== другие копии (bot_data_c1_w*) в /home/lab:
+/home/lab/incoming/bot_data_c1_w
+total 24
+drwxr-xr-x  6 lab lab 4096 Oct 22 11:30 .
+drwx------ 10 lab lab 4096 Oct 21 14:49 ..
+drwxrwxr-x  4 lab lab 4096 Oct 13 00:00 bot_data_c1
+drwxrwxr-x  5 lab lab 4096 Oct 18 00:00 bot_data_c1_s7
+drwxrwxr-x 10 lab lab 4096 Oct 26 00:00 bot_data_c1_w
+drwxrwxr-x  4 lab lab 4096 Oct 22 05:44 bot_data_c2
+ордеров 7138, с исходом 7137
+исполнено 3093
+всего строк live_orders 7066; по режимам {'live': 7066}
+live_windows: 1113 строк
+live_markouts: 6130 строк
+paper_fills: 16768 строк
+paper_windows: 2706 строк
+paper_markouts: 10254 строк
+paper_signals: 8384 строк; варианты {'c1': 8384}
+total 1316
+drwxr-xr-x  2 lab lab   4096 Oct 26 12:10 .
+drwxr-xr-x 31 lab lab   4096 Oct 26 12:10 ..
+-rw-r--r--  1 lab lab  93714 Oct 26 12:10 c1w_live_markouts.csv.gz
+-rw-r--r--  1 lab lab  31714 Oct 26 12:10 c1w_live_windows.csv.gz
+-rw-r--r--  1 lab lab 340503 Oct 26 12:10 c1w_orders.csv.gz
+-rw-r--r--  1 lab lab 326744 Oct 26 12:10 c1w_paper_fills.csv.gz
+-rw-r--r--  1 lab lab  72307 Oct 26 12:10 c1w_paper_markouts.csv.gz
+-rw-r--r--  1 lab lab 393032 Oct 26 12:10 c1w_paper_signals.csv.gz
+-rw-r--r--  1 lab lab  48434 Oct 26 12:10 c1w_paper_windows.csv.gz
+-rw-r--r--  1 lab lab   9513 Oct 26 12:10 c1w_windows_all.csv.gz
+-rw-r--r--  1 lab lab   9990 Oct 26 12:10 job.log
