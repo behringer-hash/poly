@@ -80,7 +80,9 @@ def main():
 
     v = cfg.variants[0]
     emit(f"\033[96mМейкерский бот запущен ({a.mode}). Сигнал {v.name}: порог {100 * v.edge_thr:.1f} ц, источник {v.source}, "
-         f"sigma x{v.sigma_mult:g}; заявка {lcfg.get('maker_price', 'improve')}, живёт {lcfg.get('maker_life_sec', 2.0)} с. "
+         f"sigma x{v.sigma_mult:g}; цена заявки {lcfg.get('maker_price', 'improve')}"
+         f"{' (' + ' / '.join(lcfg.get('ab_modes', ['improve', 'ask'])) + ' случайно)' if str(lcfg.get('maker_price')).lower() == 'ab' else ''}"
+         f", живёт {lcfg.get('maker_life_sec', 2.0)} с. "
          f"Данные: {os.path.abspath(cfg.data_dir)}\033[0m")
 
     async def run_all():

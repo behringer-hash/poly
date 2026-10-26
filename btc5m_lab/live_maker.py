@@ -12,6 +12,10 @@ bid по старой цене. Пассивная заявка задержки
 Как устроено:
   * цена - лучший bid стороны сигнала, или bid + 1 ц, если спред не меньше 2 ц ("maker_price": "improve");
     заявка post-only: если она пересекла бы спред, сервер её отклонит, тейкером мы не покупаем;
+  * "maker_price": "ask" - цена = ask в момент сигнала, без post-only: если ask ещё на месте, заявка исполняется сразу
+    тейкером (биржа держит её 150 мс, комиссия тейкера), иначе стоит bid'ом по этой цене до снятия;
+  * "maker_price": "ab" - на каждый сигнал случайно один из режимов ab_modes (по умолчанию improve и ask): A/B-тест
+    в одинаковых условиях; режим пишется в maker_orders/maker_final (price_mode), итоги - по режимам;
   * тип GTD со сроком gtd_expire_sec (страховка: если снять не удалось, биржа снимет сама), иначе GTC;
   * через maker_life_sec заявка снимается, затем по get_order узнаём, сколько исполнилось; позиция держится до конца окна;
   * одна открытая заявка на сторону, лимиты на окно и сутки, файл STOP, стоп после серии ошибок;
@@ -25,23 +29,31 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import random
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
-from common import clock, emit, log
+from common import clock, emit, log, taker_fee
 from live import LiveTrader, order_size
+
+FEE_RATE = 0.07
+TAKER_CHECK_SEC = 0.335   # теневая проверка заявки по ask: исполнилась ли сразу (удержание биржей 150 мс + дорога)
+MODE_NAME = {"join": "по bid", "improve": "bid+1", "ask": "по ask"}
 
 MAKER_LIVE_SCHEMAS = {
     "maker_orders": ["sid", "slug", "outcome", "t_signal", "t_sent", "t_resp", "http_ms", "price", "size", "mode", "status",
-                     "order_id", "error", "bid", "ask", "ahead", "edge_c", "T", "presigned", "sign_ms"],
+                     "order_id", "error", "bid", "ask", "ahead", "edge_c", "T", "presigned", "sign_ms", "price_mode"],
     "maker_final": ["sid", "slug", "outcome", "order_id", "price", "size", "t_cancel", "cancel_ms", "cancel_status",
-                    "size_matched", "order_status", "shadow_qty", "shadow_ms", "error", "shadow_first_ms"],
+                    "size_matched", "order_status", "shadow_qty", "shadow_ms", "error", "shadow_first_ms", "price_mode",
+                    "shadow_taker", "shadow_px"],
     "maker_user_events": ["recv_ms", "event_type", "type", "order_id", "status", "size_matched", "price", "outcome", "raw"],
 }
 
 MAKER_DEFAULTS = {
-    "maker_price": "improve",      # join - лучший bid; improve - bid + 1 ц, если спред >= 2 ц
+    "maker_price": "improve",      # join - лучший bid; improve - bid + 1 ц, если спред >= 2 ц; ask - по ask сигнала
+                                   # (может исполниться сразу тейкером, с комиссией); ab - случайно из ab_modes на каждый сигнал
+    "ab_modes": ["improve", "ask"],
     "maker_life_sec": 2.0,         # сколько секунд заявка стоит в книге
     "order_type": "GTD",           # GTD (со страховочным сроком) или GTC
     "gtd_expire_sec": 90,          # срок GTD-заявки от момента подписи (у биржи порог не меньше минуты)
@@ -86,6 +98,7 @@ class MakerTrader(LiveTrader):
         self.hook = ShadowHook(self)
         self.watchdog_every = 5.0
         self.mstats = dict(signals=0, placed=0, skipped=0, filled=0, shares=0.0, shadow_filled=0, shadow_shares=0.0, trades_seen=0)
+        self.mode_stats: dict[str, dict] = {}    # режим цены -> заявок, исполнено, шейров, PnL (для A/B)
 
     def m(self, key):
         return self.c.get(key, MAKER_DEFAULTS[key])
@@ -113,12 +126,24 @@ class MakerTrader(LiveTrader):
         return self.client.create_order(self._OrderArgs(**kw), self._Opts(tick_size="0.01"))
 
     # ------------------------------------------------------------------ цена и лимиты
-    def quote(self, b):
-        """Цена пассивной заявки по нашей копии книги стороны; None - поставить нельзя."""
+    def modes(self) -> list[str]:
+        m = str(self.m("maker_price")).lower()
+        return [str(x).lower() for x in self.m("ab_modes")] if m == "ab" else [m]
+
+    def pick_mode(self) -> str:
+        ms = self.modes()
+        return ms[random.randrange(len(ms))]
+
+    def quote(self, b, mode=None):
+        """Цена заявки по нашей копии книги стороны; None - поставить нельзя.
+        join/improve - пассивная (ниже ask); ask - по ask, такая заявка может исполниться сразу."""
+        mode = mode or self.modes()[0]
         bid, ask = b.bb, b.ba
         if bid is None or ask is None:
             return None
-        q = bid + (0.01 if self.m("maker_price") == "improve" and ask - bid >= 0.02 - 1e-9 else 0.0)
+        if mode == "ask":
+            return round(ask, 2)
+        q = bid + (0.01 if mode == "improve" and ask - bid >= 0.02 - 1e-9 else 0.0)
         q = round(q, 2)
         return q if q < ask - 1e-9 else None
 
@@ -175,7 +200,8 @@ class MakerTrader(LiveTrader):
         if win is None:
             return
         b = win.books[s["outcome"]]
-        q = self.quote(b)
+        mode = self.pick_mode()
+        q = self.quote(b, mode)
         st = self.win_stats.setdefault(s["slug"], self._new_st())
         if q is None:
             self.mstats["skipped"] += 1
@@ -195,7 +221,8 @@ class MakerTrader(LiveTrader):
                  bid=b.bb, ask=b.ba, ahead=float(b.bids.get(q, 0.0)), status="sending", oid="", expired=False,
                  t_act_srv=now * 1000 + self.pm.offset_ms + 15.0, t_end_srv=None,
                  shadow_qty=0.0, shadow_ms=None, shadow_first_ms=None, shadow_left=float(b.bids.get(q, 0.0)),
-                 shadow_done=False, move=s.get("move"), anchor_age=s.get("anchor_age"))
+                 shadow_done=False, move=s.get("move"), anchor_age=s.get("anchor_age"),
+                 mode=mode, taker_wait=(mode == "ask"), shadow_taker=False, shadow_px=None)
         self.open[e["sid"]] = e
         st["cond"] = win.m.get("condition_id")
         st["orders"] += 1
@@ -203,8 +230,12 @@ class MakerTrader(LiveTrader):
         st["pending"][e["outcome"]] += size
         self.day_spend += q * size
         self.last_order_t = now
+        ms = self.mode_stats.setdefault(mode, dict(orders=0, filled=0, shares=0.0, pnl=0.0))
+        ms["orders"] += 1
         self.loop.run_in_executor(self.post_pool, self._place, e)
         self.loop.call_later(life, self._expire, e)
+        if mode == "ask":
+            self.loop.call_later(TAKER_CHECK_SEC, self._shadow_taker_check, e)
 
     def _place(self, e):
         """Поток отправки: подписанная заранее (или сейчас) post-only заявка."""
@@ -223,7 +254,7 @@ class MakerTrader(LiveTrader):
                     r["status"] = "signed_not_sent"
                 else:
                     t1 = time.perf_counter()
-                    resp = self.client.post_order(order, self._order_type(), post_only=True)
+                    resp = self.client.post_order(order, self._order_type(), post_only=e["mode"] != "ask")
                     r["http_ms"] = (time.perf_counter() - t1) * 1000
                     r["oid"] = resp.get("orderID") or resp.get("orderId") or ""
                     r["err"] = resp.get("errorMsg") or ""
@@ -242,13 +273,15 @@ class MakerTrader(LiveTrader):
                                       round(r["http_ms"], 1) if r["http_ms"] else None, e["q"], e["size"], self.mode,
                                       r["status"], r["oid"], r["err"], e["bid"], e["ask"], e["ahead"],
                                       round(100 * e["edge"], 3), round(e["T"], 2), int(r["presigned"]),
-                                      round(r["sign_ms"], 2) if r["sign_ms"] is not None else None))
+                                      round(r["sign_ms"], 2) if r["sign_ms"] is not None else None, e["mode"]))
         life = self.m("maker_life_sec")
         if self.mode in ("dry", "sign"):
             e["status"] = "shadow"
             how = ("не отправляется (dry)" if self.mode == "dry" else
                    "подписана, не отправлена (sign" + (", готовая подпись)" if r["presigned"] else f", подпись {r['sign_ms'] or 0:.0f} мс)"))
-            self._print_order(e, f"{how}; исполнение считается по сделкам рынка, снятие через {life} с")
+            shadow = ("исполнение: сразу по ask, если он на месте через 335 мс, иначе по сделкам рынка" if e["mode"] == "ask"
+                      else "исполнение считается по сделкам рынка")
+            self._print_order(e, f"{how}; {shadow}, снятие через {life} с")
         elif r["oid"] and r["status"] not in ("error", "exception", "rejected_cross"):
             e["status"] = "live"
             self.errors = 0
@@ -338,23 +371,32 @@ class MakerTrader(LiveTrader):
             self.open.pop(e["sid"])
         if self.mode in ("dry", "sign"):
             filled = e["shadow_qty"]
+            px = e["shadow_px"] if e.get("shadow_taker") else e["q"]
+            fee_ps = taker_fee(px, FEE_RATE) if e.get("shadow_taker") else 0.0
         else:
             filled = r["size_matched"] or 0.0   # None - неизвестно: в учёт не идёт, PnL уточнит сверка с Polymarket
+            px = e["q"]
+            # заявка по ask могла исполниться тейкером: в оценке берём комиссию тейкера (верхняя оценка), точно - сверка
+            fee_ps = taker_fee(px, FEE_RATE) if e.get("mode") == "ask" else 0.0
         filled = min(filled, e["size"])
+        cost = (px + fee_ps) * filled
         st = self.win_stats.get(e["slug"])
         if st is not None:
             st["pending"][e["outcome"]] -= e["size"]
-            delta = e["q"] * (filled - e["size"])
+            delta = cost - e["q"] * e["size"]
             st["spend"] += delta
             self.day_spend += delta
             if filled > 0:
                 st["filled"] += 1
                 st["shares"][e["outcome"]] += filled
-                st["usdc"][e["outcome"]] += e["q"] * filled
+                st["usdc"][e["outcome"]] += cost
         if filled > 0:
             self.last_fill_t = clock.now()
             self.mstats["filled"] += 1
             self.mstats["shares"] += filled
+            ms = self.mode_stats.setdefault(e.get("mode", ""), dict(orders=0, filled=0, shares=0.0, pnl=0.0))
+            ms["filled"] += 1
+            ms["shares"] += filled
         if e["shadow_qty"] > 0:
             self.mstats["shadow_filled"] += 1
             self.mstats["shadow_shares"] += e["shadow_qty"]
@@ -362,9 +404,11 @@ class MakerTrader(LiveTrader):
                                      round(r["cancel_ms"], 1) if r["cancel_ms"] else None, r["cancel_status"],
                                      r["size_matched"], r["order_status"], round(e["shadow_qty"], 3),
                                      round(e["shadow_ms"], 1) if e["shadow_ms"] is not None else None, r["err"],
-                                     round(e["shadow_first_ms"], 1) if e["shadow_first_ms"] is not None else None))
+                                     round(e["shadow_first_ms"], 1) if e["shadow_first_ms"] is not None else None,
+                                     e.get("mode", ""), int(bool(e.get("shadow_taker"))), e.get("shadow_px")))
         if st is not None and filled > 0:
-            st.setdefault("fills", []).append(dict(sid=e["sid"], outcome=e["outcome"], q=e["q"], qty=filled))
+            st.setdefault("fills", []).append(dict(sid=e["sid"], outcome=e["outcome"], q=px, qty=filled, fee=fee_ps * filled,
+                                                   mode=e.get("mode", "")))
         self._print_final(e, r, filled)
 
     def _print_order(self, e, result):
@@ -372,14 +416,17 @@ class MakerTrader(LiveTrader):
         age = "" if e.get("anchor_age") is None else f" за {e['anchor_age']:.1f} с без переоценки книги"
         emit(f"{CY}{ts(e['t_signal'])} СИГНАЛ #{e['sid']} {e['outcome']}{X} | {mv}{age} | edge {100 * e['edge']:.1f} ц | "
              f"до конца окна {e['T']:.0f} с\n"
-             f"             ЗАЯВКА #{e['sid']} BUY {e['outcome']} {e['size']:.0f} шт @ {e['q']:.2f} "
+             f"             ЗАЯВКА #{e['sid']} [{MODE_NAME.get(e['mode'], e['mode'])}] BUY {e['outcome']} {e['size']:.0f} шт @ {e['q']:.2f} "
              f"(bid {e['bid']:.2f} / ask {e['ask']:.2f}, впереди в очереди {e['ahead']:.0f} шт) → {result}")
 
     def _print_final(self, e, r, filled):
         sh = e["shadow_qty"]
         first = "" if e["shadow_first_ms"] is None else f", первое через {e['shadow_first_ms']:.0f} мс"
         full = "" if e["shadow_ms"] is None else f", полностью через {e['shadow_ms']:.0f} мс"
-        if self.mode in ("dry", "sign"):
+        if self.mode in ("dry", "sign") and e.get("shadow_taker"):
+            fee = taker_fee(e["shadow_px"], FEE_RATE) * sh
+            what = f"{GR}ИСПОЛНЕНА СРАЗУ{X} тейкером {sh:.0f} шт по {e['shadow_px']:.2f} (комиссия {fee:.2f}$)"
+        elif self.mode in ("dry", "sign"):
             what = (f"{GR}ИСПОЛНЕНА{X} {sh:.0f} шт по сделкам рынка{first}{full}" if sh >= e["size"] - 1e-9 else
                     f"{GR}ЧАСТИЧНО{X} {sh:.0f} из {e['size']:.0f} шт по сделкам рынка{first}" if sh > 0 else "не исполнена")
         else:
@@ -391,9 +438,27 @@ class MakerTrader(LiveTrader):
                 what += f" (снятие: {r['cancel_status'][:40]}"
                 what += f", {r['cancel_ms']:.0f} мс)" if r["cancel_ms"] else ")"
             what += f" | по сделкам рынка: {sh:.0f} шт{first}"
-        emit(f"{ts(clock.now())} ИТОГ   #{e['sid']} {e['outcome']} @ {e['q']:.2f}: {what}")
+        emit(f"{ts(clock.now())} ИТОГ   #{e['sid']} [{MODE_NAME.get(e.get('mode'), e.get('mode'))}] {e['outcome']} @ {e['q']:.2f}: {what}")
 
     # ------------------------------------------------------------------ теневое исполнение по сделкам рынка
+    def _shadow_taker_check(self, e):
+        """Заявка по ask: если через ~335 мс ask стороны всё ещё не выше нашей цены и объёма хватает - считаем, что
+        она исполнилась сразу тейкером по этому ask (с комиссией); иначе дальше она стоит bid'ом по своей цене."""
+        if not e.get("taker_wait"):
+            return
+        e["taker_wait"] = False
+        if self.open.get(e["sid"]) is not e:
+            return
+        win = self.pm.windows.get(e["start"])
+        b = win.books[e["outcome"]] if win is not None else None
+        now_srv = clock.now() * 1000 + self.pm.offset_ms
+        if b is not None and b.ba is not None and b.ba <= e["q"] + 1e-9 and b.asks.get(b.ba, 0.0) >= e["size"] - 1e-9:
+            e.update(shadow_qty=e["size"], shadow_done=True, shadow_taker=True, shadow_px=b.ba)
+            e["shadow_first_ms"] = e["shadow_ms"] = now_srv - e["t_act_srv"]
+        else:
+            e["t_act_srv"] = now_srv
+            e["shadow_left"] = float(b.bids.get(e["q"], 0.0)) if b is not None else 0.0
+
     def on_market_trade(self, win, oc, side, price, size, sts):
         self.mstats["trades_seen"] += 1          # контроль: сделки рынка до нас доходят
         if not self.open:
@@ -403,7 +468,7 @@ class MakerTrader(LiveTrader):
         except (TypeError, ValueError):
             return
         for e in list(self.open.values()):
-            if e["slug"] != win.slug or e["shadow_done"] or sts < e["t_act_srv"]:
+            if e["slug"] != win.slug or e["shadow_done"] or e.get("taker_wait") or sts < e["t_act_srv"]:
                 continue
             if e["t_end_srv"] is not None and sts >= e["t_end_srv"]:
                 continue
@@ -437,7 +502,7 @@ class MakerTrader(LiveTrader):
         out = []
         for side, tok in (("Up", win.m["up_token"]), ("Down", win.m["down_token"])):
             b = win.books[side]
-            for px in {self.quote(b), b.bb}:
+            for px in {self.quote(b, m) for m in self.modes()} | {b.bb}:
                 if px is None or not (self.c["price_min"] <= px <= self.c["price_max"]):
                     continue
                 px = round(px, 2)
@@ -561,14 +626,22 @@ class MakerTrader(LiveTrader):
                  f"{datetime.fromtimestamp(win.start + 300).strftime('%H:%M')} закрыто, победил {winner}{X} | "
                  f"заявок {st['orders']}, исполнено {st['filled']}{how}"]
         for f in st.get("fills", []):
-            pnl = ((1.0 if f["outcome"] == winner else 0.0) - f["q"]) * f["qty"]
+            pnl = ((1.0 if f["outcome"] == winner else 0.0) - f["q"]) * f["qty"] - f.get("fee", 0.0)
             col = GR if pnl >= 0 else RD
-            lines.append(f"     #{f['sid']} {f['outcome']} {f['qty']:.0f} шт @ {f['q']:.2f} → {col}{pnl:+.2f}${X}")
+            fee = f", комиссия {f['fee']:.2f}$" if f.get("fee") else ""
+            lines.append(f"     #{f['sid']} [{MODE_NAME.get(f.get('mode'), f.get('mode'))}] {f['outcome']} {f['qty']:.0f} шт "
+                         f"@ {f['q']:.2f}{fee} → {col}{pnl:+.2f}${X}")
+            ms = self.mode_stats.setdefault(f.get("mode"), dict(orders=0, filled=0, shares=0.0, pnl=0.0))
+            ms["pnl"] += pnl
         m = self.mstats
         orders = m["signals"] - m["skipped"]
         lines.append(f"     итог окна {pnl_est:+.2f}$ | с запуска: сигналов {m['signals']}, заявок {orders}, исполнено "
                      f"{m['filled']} ({m['filled'] / max(orders, 1):.1%}), {m['shares']:.0f} шт, PnL {self.total_pnl:+.2f}$ "
                      f"| сделок рынка получено {m['trades_seen']}")
+        if len(self.mode_stats) > 1:
+            lines.append("     по режимам: " + "; ".join(
+                f"{MODE_NAME.get(k, k)}: заявок {v['orders']}, исполнено {v['filled']} ({v['filled'] / max(v['orders'], 1):.1%}), "
+                f"PnL {v['pnl']:+.2f}$" for k, v in sorted(self.mode_stats.items())))
         emit("\n".join(lines))
         row = [win.slug, winner, used, st["orders"], st["filled"], st["shares"]["Up"], st["shares"]["Down"], round(cost, 4)]
         if self.mode == "live" and st["cond"] and st["filled"] > 0:

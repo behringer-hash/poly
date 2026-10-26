@@ -264,3 +264,54 @@ def test_signal_engine_without_paper_fills_calls_listener():
     p.listener = SimpleNamespace(on_settle=lambda *a: seen.append(a))
     p.settle(SimpleNamespace(slug="x"), "Up", "provisional")
     assert p.acc == {} and len(seen) == 1
+
+
+def test_ab_mode_ask_is_not_post_only_and_modes_alternate():
+    import random
+    random.seed(1)
+    cl = Client(matched="0")
+    t, win = trader("live", cl, maker_price="ab", one_order_per_side=False, max_open_orders=100, maker_life_sec=0.05,
+                     max_spend_per_window=1e9, max_shares_per_window=1e9)
+
+    async def go():
+        for i in range(20):
+            t.on_signal(sig(sid=i + 1))
+        await asyncio.sleep(0.6)
+    run(go())
+    by_price = {o["price"]: po for o, _, po in cl.posted}
+    assert by_price.get(0.50) is False and by_price.get(0.49) is True     # ask 0.50 - без post-only; bid+1 = 0.49 - post-only
+    assert set(t.mode_stats) == {"improve", "ask"} and sum(v["orders"] for v in t.mode_stats.values()) == 20
+
+
+def test_ask_mode_shadow_taker_fill_with_fee():
+    t, win = trader("dry", maker_price="ask")
+    win.books["Up"].asks = {0.50: 50.0}
+
+    async def go():
+        t.on_signal(sig("Up", sid=1))              # ask 0.50 на месте и объёма хватает -> исполнение сразу
+        await asyncio.sleep(0.7)
+    run(go())
+    st = t.win_stats[win.slug]
+    fee = 0.07 * 0.5 * 0.5 * 5
+    assert st["shares"]["Up"] == 5 and abs(st["usdc"]["Up"] - (5 * 0.50 + fee)) < 1e-9
+    fin = t.w.stream("maker_final")[0]
+    assert fin[15] == "ask" and fin[16] == 1 and fin[17] == 0.50
+
+
+def test_ask_mode_rests_as_bid_when_ask_moved():
+    t, win = trader("dry", maker_price="ask", maker_life_sec=1.0)
+    win.books["Up"].asks = {0.50: 50.0}
+
+    async def go():
+        t.on_signal(sig("Up", sid=1))
+        e = next(iter(t.open.values()))
+        now_srv = clock.now() * 1000
+        t.on_market_trade(win, "Up", "S", "0.50", "5", now_srv + 20)    # пока биржа держит заявку - не считается
+        win.books["Up"].ba, win.books["Up"].asks = 0.52, {0.52: 50.0}   # ask ушёл вверх
+        await asyncio.sleep(0.4)
+        assert not e["shadow_taker"] and not e["taker_wait"] and e["shadow_qty"] == 0
+        t.on_market_trade(win, "Up", "S", "0.50", "5", clock.now() * 1000 + 10)   # продажа по нашей цене - исполнение мейкером
+        await asyncio.sleep(1.2)
+    run(go())
+    st = t.win_stats[win.slug]
+    assert st["shares"]["Up"] == 5 and abs(st["usdc"]["Up"] - 2.5) < 1e-9          # без комиссии
