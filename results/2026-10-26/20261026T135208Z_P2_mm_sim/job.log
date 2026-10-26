@@ -1,0 +1,148 @@
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 313, in <module>
+    main()
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 293, in main
+    win = Win(w, pm, tr, {})
+          ^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 73, in __init__
+    self.nc = {X: next_change(self.r[X][0]) for X in "UD"}
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 62, in next_change
+    return np.where(k < len(ch), ch[np.minimum(k, len(ch) - 1)], len(v))
+                                 ~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+IndexError: index -1 is out of bounds for axis 0 with size 0
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 313, in <module>
+    main()
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 293, in main
+    win = Win(w, pm, tr, {})
+          ^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 73, in __init__
+    self.nc = {X: next_change(self.r[X][0]) for X in "UD"}
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 62, in next_change
+    return np.where(k < len(ch), ch[np.minimum(k, len(ch) - 1)], len(v))
+                                 ~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+IndexError: index -1 is out of bounds for axis 0 with size 0
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 313, in <module>
+    main()
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 293, in main
+    win = Win(w, pm, tr, {})
+          ^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 73, in __init__
+    self.nc = {X: next_change(self.r[X][0]) for X in "UD"}
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 62, in next_change
+    return np.where(k < len(ch), ch[np.minimum(k, len(ch) - 1)], len(v))
+                                 ~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+IndexError: index -1 is out of bounds for axis 0 with size 0
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 313, in <module>
+    main()
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 293, in main
+    win = Win(w, pm, tr, {})
+          ^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 73, in __init__
+    self.nc = {X: next_change(self.r[X][0]) for X in "UD"}
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 62, in next_change
+    return np.where(k < len(ch), ch[np.minimum(k, len(ch) - 1)], len(v))
+                                 ~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+IndexError: index -1 is out of bounds for axis 0 with size 0
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 313, in <module>
+    main()
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 293, in main
+    win = Win(w, pm, tr, {})
+          ^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 73, in __init__
+    self.nc = {X: next_change(self.r[X][0]) for X in "UD"}
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 62, in next_change
+    return np.where(k < len(ch), ch[np.minimum(k, len(ch) - 1)], len(v))
+                                 ~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+IndexError: index -1 is out of bounds for axis 0 with size 0
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 313, in <module>
+    main()
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 293, in main
+    win = Win(w, pm, tr, {})
+          ^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 73, in __init__
+    self.nc = {X: next_change(self.r[X][0]) for X in "UD"}
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 62, in next_change
+    return np.where(k < len(ch), ch[np.minimum(k, len(ch) - 1)], len(v))
+                                 ~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+IndexError: index -1 is out of bounds for axis 0 with size 0
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 313, in <module>
+    main()
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 293, in main
+    win = Win(w, pm, tr, {})
+          ^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 73, in __init__
+    self.nc = {X: next_change(self.r[X][0]) for X in "UD"}
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 62, in next_change
+    return np.where(k < len(ch), ch[np.minimum(k, len(ch) - 1)], len(v))
+                                 ~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+IndexError: index -1 is out of bounds for axis 0 with size 0
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 313, in <module>
+    main()
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 293, in main
+    win = Win(w, pm, tr, {})
+          ^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 73, in __init__
+    self.nc = {X: next_change(self.r[X][0]) for X in "UD"}
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 62, in next_change
+    return np.where(k < len(ch), ch[np.minimum(k, len(ch) - 1)], len(v))
+                                 ~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+IndexError: index -1 is out of bounds for axis 0 with size 0
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 313, in <module>
+    main()
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 293, in main
+    win = Win(w, pm, tr, {})
+          ^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 73, in __init__
+    self.nc = {X: next_change(self.r[X][0]) for X in "UD"}
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 62, in next_change
+    return np.where(k < len(ch), ch[np.minimum(k, len(ch) - 1)], len(v))
+                                 ~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+IndexError: index -1 is out of bounds for axis 0 with size 0
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 313, in <module>
+    main()
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 293, in main
+    win = Win(w, pm, tr, {})
+          ^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 73, in __init__
+    self.nc = {X: next_change(self.r[X][0]) for X in "UD"}
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 62, in next_change
+    return np.where(k < len(ch), ch[np.minimum(k, len(ch) - 1)], len(v))
+                                 ~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+IndexError: index -1 is out of bounds for axis 0 with size 0
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 313, in <module>
+    main()
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 293, in main
+    win = Win(w, pm, tr, {})
+          ^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 73, in __init__
+    self.nc = {X: next_change(self.r[X][0]) for X in "UD"}
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/mm_sim.py", line 62, in next_change
+    return np.where(k < len(ch), ch[np.minimum(k, len(ch) - 1)], len(v))
+                                 ~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+IndexError: index -1 is out of bounds for axis 0 with size 0
+2026-10-26: окон 6, исполнений 13357; сделок 15463, хэшей с обеими сторонами 0.0%
+             окон    pnl   пары   шейров
+var                                     
+back_nosig      6   3.14   2.74  3390.04
+back_sig15      6  16.58  12.39  1803.57
+back_sig30      6  10.47  11.78  2336.84
+front_nosig     6  38.30  41.26  8182.28
+front_sig15     6  45.95  49.23  4947.73
+front_sig30     6  47.80  51.49  6373.42
+время: 392 с
+total 276
+drwxr-xr-x  2 lab lab   4096 Oct 26 13:58 .
+drwxr-xr-x 38 lab lab   4096 Oct 26 13:52 ..
+-rw-r--r--  1 lab lab   7469 Oct 26 13:58 job.log
+-rw-r--r--  1 lab lab 259919 Oct 26 13:58 mmfill_2026-10-26.csv.gz
+-rw-r--r--  1 lab lab   1889 Oct 26 13:58 mmwin_2026-10-26.csv.gz
