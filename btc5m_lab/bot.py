@@ -495,6 +495,8 @@ def main():
         pmx.w.schemas.update(LIVE_SCHEMAS)
         KEEP_STREAMS.update(set(LIVE_SCHEMAS) | {"pm_trades"})  # pm_trades - найти свои сделки
         maker_exec = str(lcfg.get("execution", "")).lower() == "maker"   # исполнение пассивными заявками (live_maker.py)
+        if a.mode == "live" and lcfg.get("test_only"):
+            raise SystemExit("файл настроек помечен test_only (без лимитов) - он только для режимов dry и sign")
         if maker_exec:
             from live_maker import MAKER_LIVE_SCHEMAS
             pmx.w.schemas.update(MAKER_LIVE_SCHEMAS)
