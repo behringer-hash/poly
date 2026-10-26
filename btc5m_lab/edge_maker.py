@@ -124,7 +124,7 @@ def side_mid(pm: PM, w: int, t: float, sgn: int) -> float:
     return (a + b) / 2 if np.isfinite(a) and np.isfinite(b) else np.nan
 
 
-def orders_for(kind, w, t0, sgn, pm, dep, tr, win, Ds):
+def orders_for(kind, w, t0, sgn, pm, dep, tr, win, Ds, place_ms=PLACE_MS, life_ms=LIFE_MS, modes=("join", "improve")):
     rows = []
     tok = "U" if sgn > 0 else "D"
     won = (1.0 if (win[w] == "Up") == (sgn > 0) else 0.0)
@@ -133,16 +133,16 @@ def orders_for(kind, w, t0, sgn, pm, dep, tr, win, Ds):
         bid, ask = side_book(pm.state(w, t_dec, "rcv"), sgn)
         if not (np.isfinite(bid) and np.isfinite(ask)):
             continue
-        t_end = min(t_dec + PLACE_MS + LIFE_MS, (w + WINDOW - 10) * 1000.0)
-        t_act = t_dec + PLACE_MS
+        t_end = min(t_dec + place_ms + life_ms, (w + WINDOW - 10) * 1000.0)
+        t_act = t_dec + place_ms
         if t_end <= t_act:
             continue
-        for mode in ("join", "improve"):
+        for mode in modes:
             q = round(bid + (0.01 if mode == "improve" and ask - bid >= 0.02 - 1e-9 else 0.0), 2)
             if not (0.01 <= q <= 0.98):
                 continue
             sb, sa = side_book(pm.state(w, t_act, "srv"), sgn)
-            r = dict(kind=kind, w=w, t=t0, sgn=sgn, D=D, mode=mode, T=round(w + WINDOW - t_act / 1000, 1), q=q,
+            r = dict(kind=kind, w=w, t=t0, sgn=sgn, D=D, mode=mode, place_ms=place_ms, T=round(w + WINDOW - t_act / 1000, 1), q=q,
                      spread=round(ask - bid, 2), life=round(t_end - t_act), won=won)
             if np.isfinite(sa) and sa <= q + 1e-9:
                 r["placed"] = 0              # заявка пересекла бы спред: post-only отклонит
@@ -168,7 +168,15 @@ def main():
     ap.add_argument("roots", nargs="+")
     ap.add_argument("--source", default="bybit")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--place-ms", default="25", help="задержка постановки заявки, мс (через запятую - несколько прогонов)")
+    ap.add_argument("--ds", default="0,1000,3000", help="через сколько мс после сигнала принимается решение")
+    ap.add_argument("--modes", default="join,improve")
+    ap.add_argument("--life-ms", type=float, default=LIFE_MS)
+    ap.add_argument("--no-ctl", action="store_true", help="без контрольных заявок в случайные моменты")
     a = ap.parse_args()
+    places = [float(x) for x in a.place_ms.split(",") if x]
+    ds = tuple(int(x) for x in a.ds.split(",") if x)
+    modes = tuple(x for x in a.modes.split(",") if x)
     os.makedirs(a.out, exist_ok=True)
     for root in a.roots:
         day = os.path.basename(os.path.normpath(root))
@@ -186,14 +194,15 @@ def main():
             sigs = [s for s in collect(pm_top, t_src, px, delays=(0,)) if s["w"] in win]
             dep, tr = Depth(root), Trades(root)
             rows = []
-            for s in sigs:
-                rows += orders_for("sig", s["w"], s["t"], s["sgn"], pm, dep, tr, win, DS)
-            for w in sorted(win):
+            for pl in places:
+                for s in sigs:
+                    rows += orders_for("sig", s["w"], s["t"], s["sgn"], pm, dep, tr, win, ds, pl, a.life_ms, modes)
+            for w in ([] if a.no_ctl else sorted(win)):
                 if w not in pm.by_w:
                     continue
                 for off in CTRL_OFFSETS:
                     for sgn in (1, -1):
-                        rows += orders_for("ctl", w, (w + off) * 1000.0, sgn, pm, dep, tr, win, (0,))
+                        rows += orders_for("ctl", w, (w + off) * 1000.0, sgn, pm, dep, tr, win, (0,), places[0], a.life_ms, modes)
             d = pd.DataFrame(rows)
             if len(d):
                 d.to_csv(os.path.join(a.out, f"maker_{day}.csv.gz"), index=False, compression="gzip")
