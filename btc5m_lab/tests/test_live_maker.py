@@ -182,7 +182,7 @@ def test_dry_shadow_fill_queue_and_through():
         t.on_signal(sig("Up", sid=1))                 # bid Up 0.48, ask 0.50 -> заявка 0.49, впереди 0 (уровень пуст)
         t.on_signal(sig("Down", sid=2))               # bid Down 0.50, ask 0.52 -> 0.51
         await asyncio.sleep(0.02)
-        e_up = t.open[(win.slug, "Up")]
+        e_up = next(o for o in t.open.values() if o["outcome"] == "Up")
         now_srv = clock.now() * 1000
         t.on_market_trade(win, "Up", "S", "0.49", "3", now_srv - 1000)    # до постановки - не считается
         t.on_market_trade(win, "Up", "S", "0.49", "3", now_srv + 10)      # у нашего уровня: 3 из 5
@@ -216,10 +216,23 @@ def test_watchdog_halts_on_stuck_order():
     async def go():
         st = t.win_stats.setdefault(win.slug, t._new_st())
         st["pending"]["Up"] = 5
-        t.open[(win.slug, "Up")] = dict(sid=9, slug=win.slug, outcome="Up", t_signal=clock.now() - 100, q=0.49, size=5,
+        t.open[9] = dict(sid=9, slug=win.slug, outcome="Up", t_signal=clock.now() - 100, q=0.49, size=5,
                                         oid="O9", shadow_qty=0.0, shadow_ms=None)
         task = asyncio.create_task(t.watchdog_loop())
         await asyncio.sleep(0.1)
         task.cancel()
     run(go())
     assert not t.open and "без итога" in (t.stopped_reason or "") and t.win_stats[win.slug]["pending"]["Up"] == 0
+
+
+def test_several_orders_per_side_when_allowed():
+    cl = Client(post_delay=0.05)
+    t, win = trader("live", cl, maker_life_sec=0.3, one_order_per_side=False, max_open_orders=10)
+
+    async def go():
+        t.on_signal(sig(sid=1))
+        t.on_signal(sig(sid=2))                        # та же сторона, первая заявка ещё стоит - всё равно ставим
+        await asyncio.sleep(0.8)
+    run(go())
+    assert len(cl.posted) == 2 and sorted(cl.canceled) == ["O1", "O2"] and not t.open
+    assert t.win_stats[win.slug]["shares"]["Up"] == 10

@@ -34,7 +34,7 @@ from live import LiveTrader, order_size
 
 MAKER_LIVE_SCHEMAS = {
     "maker_orders": ["sid", "slug", "outcome", "t_signal", "t_sent", "t_resp", "http_ms", "price", "size", "mode", "status",
-                     "order_id", "error", "bid", "ask", "ahead", "edge_c", "T", "presigned"],
+                     "order_id", "error", "bid", "ask", "ahead", "edge_c", "T", "presigned", "sign_ms"],
     "maker_final": ["sid", "slug", "outcome", "order_id", "price", "size", "t_cancel", "cancel_ms", "cancel_status",
                     "size_matched", "order_status", "shadow_qty", "shadow_ms", "error"],
     "maker_user_events": ["recv_ms", "event_type", "type", "order_id", "status", "size_matched", "price", "outcome", "raw"],
@@ -46,6 +46,7 @@ MAKER_DEFAULTS = {
     "order_type": "GTD",           # GTD (со страховочным сроком) или GTC
     "gtd_expire_sec": 90,          # срок GTD-заявки от момента подписи (у биржи порог не меньше минуты)
     "max_open_orders": 2,
+    "one_order_per_side": True,    # False - по каждому сигналу своя заявка, даже если прошлая на этой стороне ещё стоит
     "max_consecutive_errors": 5,
 }
 
@@ -73,7 +74,7 @@ class MakerTrader(LiveTrader):
         super().__init__(lcfg, mode, pm, writer, ui)
         self.post_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="mk-post")
         self.aux_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="mk-aux")
-        self.open: dict[tuple, dict] = {}        # (slug, outcome) -> состояние заявки
+        self.open: dict[int, dict] = {}          # номер сигнала -> состояние заявки
         self.errors = 0
         self.hook = ShadowHook(self)
         self.watchdog_every = 5.0
@@ -135,7 +136,8 @@ class MakerTrader(LiveTrader):
         if -self.day_pnl >= c["max_loss_per_day"]:
             self.stopped_reason = f"дневной убыток {self.day_pnl:.2f}$ достиг лимита"
             return self.stopped_reason
-        if (s["slug"], s["outcome"]) in self.open:
+        if self.m("one_order_per_side") and any(o["slug"] == s["slug"] and o["outcome"] == s["outcome"]
+                                                for o in self.open.values()):
             return "заявка этой стороны ещё стоит"
         if len(self.open) >= int(self.m("max_open_orders")):
             return "много открытых заявок"
@@ -186,7 +188,7 @@ class MakerTrader(LiveTrader):
                  bid=b.bb, ask=b.ba, ahead=float(b.bids.get(q, 0.0)), status="sending", oid="", expired=False,
                  t_act_srv=now * 1000 + self.pm.offset_ms + 15.0, t_end_srv=None,
                  shadow_qty=0.0, shadow_ms=None, shadow_left=float(b.bids.get(q, 0.0)), shadow_done=False)
-        self.open[(e["slug"], e["outcome"])] = e
+        self.open[e["sid"]] = e
         st["cond"] = win.m.get("condition_id")
         st["orders"] += 1
         st["spend"] += q * size
@@ -199,14 +201,16 @@ class MakerTrader(LiveTrader):
     def _place(self, e):
         """Поток отправки: подписанная заранее (или сейчас) post-only заявка."""
         t_sent = clock.now()
-        r = dict(t_sent=t_sent, t_resp=t_sent, http_ms=None, status="dry", oid="", err="", presigned=False)
+        r = dict(t_sent=t_sent, t_resp=t_sent, http_ms=None, status="dry", oid="", err="", presigned=False, sign_ms=None)
         if self.mode != "dry":
             try:
+                t0 = time.perf_counter()
                 pre = self.presigned.pop((e["token"], e["q"], e["size"]), None)
                 if pre is not None and time.time() - pre[1] <= float(self.c.get("presign_max_age_sec", 8)):
                     order, r["presigned"] = pre[0], True
                 else:
                     order = self._make_order(e["token"], e["q"], e["size"])
+                r["sign_ms"] = (time.perf_counter() - t0) * 1000
                 if self.mode == "sign":
                     r["status"] = "signed_not_sent"
                 else:
@@ -229,11 +233,13 @@ class MakerTrader(LiveTrader):
         self.w.write("maker_orders", (e["sid"], e["slug"], e["outcome"], e["t_signal"], r["t_sent"], r["t_resp"],
                                       round(r["http_ms"], 1) if r["http_ms"] else None, e["q"], e["size"], self.mode,
                                       r["status"], r["oid"], r["err"], e["bid"], e["ask"], e["ahead"],
-                                      round(100 * e["edge"], 3), round(e["T"], 2), int(r["presigned"])))
+                                      round(100 * e["edge"], 3), round(e["T"], 2), int(r["presigned"]),
+                                      round(r["sign_ms"], 2) if r["sign_ms"] is not None else None))
         tag = f"[MAKER {self.mode}] #{e['sid']} BUY {e['outcome']} {e['size']:.0f} @ {e['q']:.2f} (bid {e['bid']:.2f} / ask {e['ask']:.2f})"
         if self.mode in ("dry", "sign"):
             e["status"] = "shadow"
-            emit(f"\033[96m{tag}\033[0m → {r['status']}, исполнение теневое, снятие через {self.m('maker_life_sec')} с")
+            how = "" if r["sign_ms"] is None else (", готовая подпись" if r["presigned"] else f", подпись {r['sign_ms']:.0f} мс")
+            emit(f"\033[96m{tag}\033[0m → {r['status']}{how}, исполнение теневое, снятие через {self.m('maker_life_sec')} с")
         elif r["oid"] and r["status"] not in ("error", "exception", "rejected_cross"):
             e["status"] = "live"
             self.errors = 0
@@ -319,8 +325,8 @@ class MakerTrader(LiveTrader):
         log("maker", f"ОСТАНОВКА: {why}")
 
     def _final(self, e, r):
-        if self.open.get((e["slug"], e["outcome"])) is e:
-            self.open.pop((e["slug"], e["outcome"]))
+        if self.open.get(e["sid"]) is e:
+            self.open.pop(e["sid"])
         if self.mode in ("dry", "sign"):
             filled = e["shadow_qty"]
         else:
