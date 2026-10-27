@@ -112,6 +112,10 @@ class MakerTrader(LiveTrader):
             return
         from py_clob_client_v2 import OrderPayload
         self._OrderPayload = OrderPayload
+        # post_order у библиотеки после исполнения опрашивает сделки до появления хэшей транзакций (лишние запросы,
+        # в Токио ~240 мс каждый): ответ сервера нужен сразу - время ответа и снятие заявки не должны их ждать
+        if self.client is not None and hasattr(self.client, "_resolve_transactions_hashes"):
+            self.client._resolve_transactions_hashes = lambda resp: resp
         try:
             from py_clob_client_v2 import OrderMarketCancelParams
             self._MarketCancel = OrderMarketCancelParams
@@ -625,7 +629,7 @@ class MakerTrader(LiveTrader):
             oid = x.get("id") if x.get("event_type") == "order" else (x.get("taker_order_id") or x.get("id"))
             self.w.write("maker_user_events", (recv, x.get("event_type"), x.get("type"), oid, x.get("status"),
                                                x.get("size_matched"), x.get("price"), x.get("outcome"),
-                                               json.dumps(x, separators=(",", ":"))[:600]))
+                                               json.dumps(x, separators=(",", ":"))[:4000]))
 
     async def stats_loop(self):
         while True:

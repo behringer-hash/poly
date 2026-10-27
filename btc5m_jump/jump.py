@@ -8,7 +8,8 @@
     sigma - секундная волатильность этого источника за 15 минут ($/sqrt(с));
   * ступени: |dF| >= thr_strong (6 ц) - заявка по ask + 1 ц; thr_weak (3 ц) <= |dF| < thr_strong - по ask (слой объёма);
   * растущая сторона: dS > 0 - Up, dS < 0 - Down; её bid должен быть в 0,05-0,95, до конца окна 12-295 с;
-  * пауза: не чаще одного сигнала в refractory_sec на (окно, сторону, ступень).
+  * пауза (на окно и сторону): сильный - не чаще раза в refractory_sec (1 с) между сильными; слабый - не раньше
+    refractory_sec после любого сигнала этой стороны.
 Сигнал уходит в MakerTrader.on_signal (live_maker.py): обычный лимит на покупку, живёт maker_life_sec (0,5 с), позиция до исхода.
 """
 from __future__ import annotations
@@ -167,10 +168,18 @@ class JumpTrigger:
         if b.bb is None or b.ba is None or not (float(c["jump_bid_min"]) <= b.bb <= float(c["jump_bid_max"])):
             self.stats["skip_price"] += 1
             return None
-        key = (win.start, side, tier)
-        if now - self.last.get(key, -1e18) < float(c["jump_refractory_sec"]):
-            return None
-        self.last[key] = now
+        # пауза: сильные - не чаще раза в refractory_sec между сильными (слабые их не блокируют);
+        # слабые - не раньше refractory_sec после любого сигнала этой стороны в окне (не докупаем продолжение хода)
+        refr = float(c["jump_refractory_sec"])
+        ks, kw = (win.start, side, "strong"), (win.start, side, "weak")
+        if tier == "strong":
+            if now - self.last.get(ks, -1e18) < refr:
+                return None
+            self.last[ks] = now
+        else:
+            if now - max(self.last.get(kw, -1e18), self.last.get(ks, -1e18)) < refr:
+                return None
+            self.last[kw] = now
         self.stats[tier] += 1
         self.sid += 1
         sig = dict(sid=self.sid, t=now, slug=win.slug, start=win.start, T=T, outcome=side, variant=self.variant,

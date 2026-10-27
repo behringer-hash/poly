@@ -170,3 +170,47 @@ def test_shadow_taker_sweeps_levels_up_to_limit():
     st = t.mstats
     assert st["filled"] == 1 and abs(st["shares"] - 5) < 1e-9
     assert abs(fin[0][-1] - (2 * 0.50 + 3 * 0.51) / 5) < 1e-6    # средняя цена тейкерской части
+
+
+def test_trigger_to_trader_end_to_end_dry():
+    """Ход Binance -> JumpTrigger -> MakerTrader (dry): заявка ask + 1 по сильному сигналу, итог по книге через shadow_match_sec."""
+    t, win = trader("dry", maker_price="ab", ab_modes=["ask", "ask1"], one_order_per_side=False, max_open_orders=100,
+                    maker_life_sec=0.1, shadow_match_sec=0.05, variant="jump")
+    win.end, win.book_lag_ms = win.start + 300, 10.0
+    win.ready = lambda: True
+    win.books["Up"].asks = {0.50: 3.0, 0.51: 20.0}
+    win.books["Down"].asks = {0.52: 20.0}
+    jump.clock = FakeClock(win.start + 150.0)
+    jt = JumpTrigger(dict(variant="jump", jump_sigma_min_sec=0), t.pm, t.w, t)
+    for s in jt.src.values():
+        s.sig.sigma = lambda: 2.0
+
+    async def go():
+        jt.on_trade("fut", 0, 0, 100000.0)
+        jt.on_trade("fut", 100, 0, 100008.0)
+        await asyncio.sleep(0.6)
+    run(go())
+    orders = t.w.stream("maker_orders")
+    assert len(orders) == 1 and orders[0][7] == 0.51 and orders[0][-1] == "ask1"
+    sig = t.w.stream("jump_signals")
+    assert len(sig) == 1 and sig[0][9] == "strong"
+    fin = t.w.stream("maker_final")
+    assert len(fin) == 1 and abs(fin[0][-1] - (3 * 0.50 + 2 * 0.51) / 5) < 1e-6
+
+
+def test_weak_paused_after_strong_but_strong_not_after_weak():
+    jt, win, rec = make()
+    jt.on_trade("fut", 0, 0, 100000.0)
+    jt.on_trade("fut", 100, 0, 100002.0)                  # слабый вверх
+    jt.on_trade("fut", 200, 0, 100008.0)                  # сильный вверх через 0 с - не блокируется слабым
+    assert [s["tier"] for s in rec.sigs] == ["weak", "strong"]
+    jump.clock.t += 0.5
+    jt.on_trade("fut", 700, 0, 100008.0)
+    jt.on_trade("fut", 800, 0, 100010.0)                  # слабый через 0,5 с после сильного - пауза
+    assert len(rec.sigs) == 2
+    jump.clock.t += 0.6
+    jt.on_trade("fut", 1400, 0, 100010.0)
+    jt.on_trade("fut", 1500, 0, 100012.0)                 # через 1,1 с после сильного - можно
+    assert [s["tier"] for s in rec.sigs] == ["weak", "strong", "weak"]
+    jt.on_trade("fut", 1600, 0, 99990.0)                  # другая сторона (Down) - своя пауза
+    assert rec.sigs[-1]["outcome"] == "Down"

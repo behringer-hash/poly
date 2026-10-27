@@ -92,8 +92,14 @@ def main():
     ap.add_argument("--modes", nargs="*", help="цены заявки, вместо MODES")
     ap.add_argument("--dms", nargs="*", help="модели момента сведения, вместо DMS")
     ap.add_argument("--tag", default="t3", help="префикс выходных файлов")
+    ap.add_argument("--tiers", nargs=2, type=float, metavar=("WEAK", "STRONG"),
+                    help="рабочее правило бота: сдвиг от WEAK - лимит по ask (слабые), от STRONG - ask + 1 ц (сильные); "
+                         "пауза сильных - между сильными, слабых - после любого сигнала стороны")
     a = ap.parse_args()
     global RULES, MODES, DMS
+    strong = None
+    if a.tiers:
+        RULES, strong = [("tiers", a.tiers[0])], a.tiers[1]
     if a.fair:
         RULES = [("fair", x) for x in a.fair]
     if a.modes:
@@ -167,14 +173,28 @@ def main():
             cc["bid"] = np.where(cc.side == "U", vb["U"], vb["D"])
             cc["ask"] = np.where(cc.side == "U", va["U"], va["D"])
             for rule, thr in RULES:
-                sel = (np.abs(cc.dF) >= thr) if rule == "fair" else (np.abs(cc.dS) >= thr)
+                sel = (np.abs(cc.dF) >= thr) if rule in ("fair", "tiers") else (np.abs(cc.dS) >= thr)
                 ev = cc[sel & np.isfinite(cc.bid) & np.isfinite(cc.ask) & cc.bid.between(PX_LO, PX_HI)]
                 last = {}
                 for r in ev.itertuples():
-                    key = (r.w, r.side)
-                    if r.t_dec - last.get(key, -1e18) < REFR_MS:
-                        continue
-                    last[key] = r.t_dec
+                    if rule == "tiers":
+                        ks, kw = (r.w, r.side, "s"), (r.w, r.side, "w")
+                        if abs(r.dF) >= strong:
+                            if r.t_dec - last.get(ks, -1e18) < REFR_MS:
+                                continue
+                            last[ks] = r.t_dec
+                            modes = [("strong", "ask1p")]
+                        else:
+                            if r.t_dec - max(last.get(kw, -1e18), last.get(ks, -1e18)) < REFR_MS:
+                                continue
+                            last[kw] = r.t_dec
+                            modes = [("weak", "ask0")]
+                    else:
+                        key = (r.w, r.side)
+                        if r.t_dec - last.get(key, -1e18) < REFR_MS:
+                            continue
+                        last[key] = r.t_dec
+                        modes = [(m, m) for m in MODES]
                     w, X = int(r.w), r.side
                     t_arr = r.t_dec + P["order"]
                     t_end = t_arr + LIFE_MS
@@ -190,10 +210,10 @@ def main():
                         v_live = bk.view(w, t_live, "srv")
                         t_m = t_live + TAKER_DELAY
                         vm = bk.view(w, t_m, "srv")
-                        for mode in MODES:
+                        for lab, mode in modes:
                             q = round(r.ask + (0.0 if mode == "ask_po" else 0.01 * int(mode[3])), 2)
-                            A = agg.setdefault((rule, thr, prof, dm, mode, Tb, pb, sp), [0, 0, 0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0])
-                            H = aggh.setdefault((rule, thr, prof, dm, mode, hr), [0.0, 0.0])
+                            A = agg.setdefault((rule, thr, prof, dm, lab, Tb, pb, sp), [0, 0, 0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0])
+                            H = aggh.setdefault((rule, thr, prof, dm, lab, hr), [0.0, 0.0])
                             A[0] += 1
                             if v_live is None:
                                 continue
@@ -225,7 +245,7 @@ def main():
                                     A[4] += (won - p) * f
                                     A[5] += fee * f
                                     H[0] += (won - p - fee) * f
-                                    O = aggo.setdefault((rule, thr, prof, dm, mode, "tk", int(round(100 * (p - r.ask)))), [0.0, 0.0, 0.0])
+                                    O = aggo.setdefault((rule, thr, prof, dm, lab, "tk", int(round(100 * (p - r.ask)))), [0.0, 0.0, 0.0])
                                     O[0] += f
                                     O[1] += won * f
                                     O[2] += (won - p - fee) * f
@@ -236,7 +256,7 @@ def main():
                                 A[8] += (won - q) * qm
                                 A[9] += REBATE * q * (1 - q) * qm
                                 H[0] += (won - q + REBATE * q * (1 - q)) * qm
-                                O = aggo.setdefault((rule, thr, prof, dm, mode, "mk", int(round(100 * (q - r.ask)))), [0.0, 0.0, 0.0])
+                                O = aggo.setdefault((rule, thr, prof, dm, lab, "mk", int(round(100 * (q - r.ask)))), [0.0, 0.0, 0.0])
                                 O[0] += qm
                                 O[1] += won * qm
                                 O[2] += (won - q + REBATE * q * (1 - q)) * qm
