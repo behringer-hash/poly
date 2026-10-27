@@ -88,7 +88,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("roots", nargs="+")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--fair", nargs="*", type=float, help="пороги fair (ц в долях), вместо RULES")
+    ap.add_argument("--modes", nargs="*", help="цены заявки, вместо MODES")
+    ap.add_argument("--dms", nargs="*", help="модели момента сведения, вместо DMS")
+    ap.add_argument("--tag", default="t3", help="префикс выходных файлов")
     a = ap.parse_args()
+    global RULES, MODES, DMS
+    if a.fair:
+        RULES = [("fair", x) for x in a.fair]
+    if a.modes:
+        MODES = a.modes
+    if a.dms:
+        DMS = a.dms
     os.makedirs(a.out, exist_ok=True)
     for root in a.roots:
         day = os.path.basename(os.path.normpath(root))
@@ -235,14 +246,14 @@ def main():
                                 n_mk=v[6], q_mk=v[7], out_mk=v[8], reb=v[9]) for k, v in agg.items()])
         Hd = pd.DataFrame([dict(zip(cols + ["hr"], k), pnl=v[0], qty=v[1]) for k, v in aggh.items()])
         Od = pd.DataFrame([dict(zip(cols + ["kind", "ov"], k), qty=v[0], won_q=v[1], pnl=v[2]) for k, v in aggo.items()])
-        for x, nm in ((Ad, "t3"), (Hd, "t3h"), (Od, "t3o")):
+        for x, nm in ((Ad, a.tag), (Hd, a.tag + "h"), (Od, a.tag + "o")):
             x.insert(0, "day", day)
             x.to_csv(os.path.join(a.out, f"{nm}_{day}.csv.gz"), index=False)
-        s = Ad[Ad.rule.eq("fair") & Ad.thr.eq(0.02)].groupby(["prof", "dm", "mode"]).agg(
+        s = Ad.groupby(["prof", "thr", "dm", "mode"]).agg(
             ev=("n_ev", "sum"), tk=("n_tk", "sum"), mk=("n_mk", "sum"), pnl=("out_tk", "sum"), fee=("fee_tk", "sum"),
             pmk=("out_mk", "sum"), reb=("reb", "sum"))
         s["итог"] = s.pnl - s.fee + s.pmk + s.reb
-        print(f"{day} (fair 2 ц):\n{s[['ev', 'tk', 'mk', 'итог']].round(1).to_string()}", flush=True)
+        print(f"{day}:\n{s[['ev', 'tk', 'mk', 'итог']].round(1).to_string()}", flush=True)
 
 
 if __name__ == "__main__":
