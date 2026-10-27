@@ -36,7 +36,8 @@ SIZE = 5.0
 LIFE_MS = 500.0
 TAKER_DELAY = 150.0
 REFR_MS = 1000.0
-PX_LO, PX_HI = 0.05, 0.95
+PX_LO, PX_HI = 0.05, 0.95      # bid растущей стороны при сигнале
+Q_LO, Q_HI = 0.0, 1.0          # цена заявки (как price_min / price_max бота); по умолчанию без ограничения
 T_MIN, T_MAX = 12.0, 295.0
 FEE, REBATE = 0.07, 0.2 * 0.07
 W = 100
@@ -93,11 +94,16 @@ def main():
     ap.add_argument("--dms", nargs="*", help="модели момента сведения, вместо DMS")
     ap.add_argument("--tag", default="t3", help="префикс выходных файлов")
     ap.add_argument("--profiles", nargs="*", help="профили задержек (tokyo, stockholm), по умолчанию оба")
+    ap.add_argument("--price-range", nargs=2, type=float, metavar=("LO", "HI"),
+                    help="как в боте: сигнал - только если bid растущей стороны в [LO, HI], заявка - только если её цена в [LO, HI]")
     ap.add_argument("--tiers", nargs=2, type=float, metavar=("WEAK", "STRONG"),
                     help="рабочее правило бота: сдвиг от WEAK - лимит по ask (слабые), от STRONG - ask + 1 ц (сильные); "
                          "пауза сильных - между сильными, слабых - после любого сигнала стороны")
     a = ap.parse_args()
-    global RULES, MODES, DMS, PROFILES
+    global RULES, MODES, DMS, PROFILES, PX_LO, PX_HI, Q_LO, Q_HI
+    if a.price_range:
+        PX_LO, PX_HI = a.price_range
+        Q_LO, Q_HI = a.price_range
     if a.profiles:
         PROFILES = {k: v for k, v in PROFILES.items() if k in a.profiles}
     strong = None
@@ -218,7 +224,8 @@ def main():
                         vm = bk.view(w, t_m, "srv")
                         for lab, mode in modes:
                             q = round(r.ask + (0.0 if mode == "ask_po" else 0.01 * int(mode[3])), 2)
-                            A = agg.setdefault((rule, thr, prof, dm, lab, Tb, pb, sp), [0, 0, 0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0])
+                            if not (Q_LO - 1e-9 <= q <= Q_HI + 1e-9):
+                                continue                   # бот не ставит заявку вне диапазона цен                            A = agg.setdefault((rule, thr, prof, dm, lab, Tb, pb, sp), [0, 0, 0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0])
                             H = aggh.setdefault((rule, thr, prof, dm, lab, hr), [0.0, 0.0])
                             A[0] += 1
                             if v_live is None:
