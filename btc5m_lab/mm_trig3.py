@@ -225,7 +225,8 @@ def main():
                         for lab, mode in modes:
                             q = round(r.ask + (0.0 if mode == "ask_po" else 0.01 * int(mode[3])), 2)
                             if not (Q_LO - 1e-9 <= q <= Q_HI + 1e-9):
-                                continue                   # бот не ставит заявку вне диапазона цен                            A = agg.setdefault((rule, thr, prof, dm, lab, Tb, pb, sp), [0, 0, 0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0])
+                                continue                   # бот не ставит заявку вне диапазона цен
+                            A = agg.setdefault((rule, thr, prof, dm, lab, Tb, pb, sp), [0, 0, 0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0])
                             H = aggh.setdefault((rule, thr, prof, dm, lab, hr), [0.0, 0.0])
                             A[0] += 1
                             if v_live is None:
