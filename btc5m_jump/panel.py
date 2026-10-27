@@ -19,6 +19,7 @@ from common import clock, emit, log
 from jump import fair_shift
 
 TIER = {"strong": "сильн.", "weak": "слаб."}
+DIM, RST = "\033[90m", "\033[0m"      # пульс - серым, чтобы строки СИГНАЛ / ЗАЯВКА / ИТОГ выделялись
 SRC = {"fut": "фьючерс", "spot": "спот"}
 
 
@@ -80,17 +81,31 @@ class MarketPanel:
         return x
 
     # ------------------------------------------------------------------ пульс
+    def state_text(self) -> str:
+        """Пока набирается волатильность - сколько ждать сигналов; потом - счётчики сигналов, исполнений и PnL."""
+        jt, tr = self.jt, self.trader
+        need = int(jt.c["jump_sigma_min_sec"])
+        left = [need - len(s.sig.diffs) for s in jt.src.values() if not s.sigma_ready(need)]
+        if len(left) == len(jt.src):
+            m = max(0, min(left))
+            return f"σ набирается: сигналы через {m // 60}:{m % 60:02d}"
+        st = jt.stats
+        txt = f"сигналов {st['strong'] + st['weak']} (сильн. {st['strong']})"
+        if tr is not None:
+            txt += f", исполнено {tr.mstats['filled']}, PnL {tr.total_pnl:+.2f}$"
+        return txt
+
     def pulse_line(self, x: dict) -> str:
         if x.get("win") is None:
-            return f"{hms(x['now'])} ПУЛЬС нет окна"
+            return f"{DIM}{hms(x['now'])} ПУЛЬС нет окна | {self.state_text()}{RST}"
         up, dn, ptb = x["up"], x["dn"], x.get("ptb")
         sp = x["src"].get("spot", {})
         fu = x["src"].get("fut", {})
         d_tw = (x["tw"] - ptb) if (x["tw"] is not None and ptb is not None) else None
         d_sp = (sp.get("px") - ptb) if (sp.get("px") is not None and ptb is not None) else None
-        return (f"{hms(x['now'])} ПУЛЬС T-{x['T']:3.0f}с | Up {f(up[0], '.2f')}/{f(up[1], '.2f')}  Down {f(dn[0], '.2f')}/{f(dn[1], '.2f')}"
+        return (f"{DIM}{hms(x['now'])} ПУЛЬС T-{x['T']:3.0f}с | Up {f(up[0], '.2f')}/{f(up[1], '.2f')}  Down {f(dn[0], '.2f')}/{f(dn[1], '.2f')}"
                 f" | TWAP60−PTB {usd(d_tw)} | спот {f(sp.get('px'), '.1f')} (−PTB {usd(d_sp)}, 1с {usd(sp.get('d1'))})"
-                f" | фьюч {f(fu.get('px'), '.1f')} (1с {usd(fu.get('d1'))})")
+                f" | фьюч {f(fu.get('px'), '.1f')} (1с {usd(fu.get('d1'))}) | {self.state_text()}{RST}")
 
     # ------------------------------------------------------------------ панель
     def panel_text(self, x: dict) -> str:
@@ -268,11 +283,19 @@ class MarketPanel:
 
     async def run(self):
         last_pulse = 0.0
+        ready = {n: False for n in self.jt.src}
+        need = int(self.jt.c["jump_sigma_min_sec"])
+        emit(f"\033[93m[JUMP] первые {need // 60} мин после запуска бот набирает волатильность Binance - сигналов (СИГНАЛ / ЗАЯВКА / ИТОГ) "
+             f"в это время нет; в строке ПУЛЬС видно, сколько осталось\033[0m")
         while True:
             now = clock.now()
             await asyncio.sleep(1.0 - (now % 1.0) + 0.002)
             now = clock.now()
             try:
+                for n, s in self.jt.src.items():
+                    if not ready[n] and s.sigma_ready(need):
+                        ready[n] = True
+                        emit(f"\033[92m[JUMP] волатильность {SRC.get(n, n)}а Binance набрана - сигналы по нему включены\033[0m")
                 x = self.snapshot(now)
                 if self.pulse_sec and now - last_pulse >= self.pulse_sec - 0.01:
                     last_pulse = now
