@@ -589,6 +589,9 @@ class LiveTrader:
             pnl = shares_win - usdc
             self.day_pnl += pnl - pnl_est
             self.total_pnl += pnl - pnl_est
+            cb = getattr(self, "on_reconciled", None)     # панель: PnL окна по данным Polymarket
+            if cb is not None:
+                cb(row[0], pnl)
             emit(f"\033[95m[LIVE] сверка с Polymarket: потрачено ${usdc:.2f} (комиссии ${fees:.2f}), "
                  f"PnL окна {pnl:+.2f}$ (оценка была {pnl_est:+.2f}$)\033[0m")
             self.w.write("live_windows", tuple(row + [round(usdc, 4), round(fees, 4), round(pnl_est, 4),

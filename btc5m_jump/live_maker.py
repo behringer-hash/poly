@@ -104,6 +104,14 @@ class MakerTrader(LiveTrader):
         self.mode_stats: dict[str, dict] = {}    # режим цены -> заявок, исполнено, шейров, PnL (для A/B)
         self.recent: dict[int, dict] = {}        # номер сигнала -> постановка и итог (для панели jump)
         self.http_hist = deque(maxlen=100)       # время ответа сервера по последним заявкам, мс
+        self.win_hist = deque(maxlen=60)         # итоги закрытых окон (для панели): slug, start, winner, pnl, pnl_api
+        self.t_start = clock.now()
+
+    def on_reconciled(self, slug, pnl):
+        """Сверка окна с Polymarket (live, из потока сверки): точный PnL окна - в историю для панели."""
+        for h in self.win_hist:
+            if h["slug"] == slug:
+                h["pnl_api"] = pnl
 
     def _note(self, sid, **kw):
         d = self.recent.setdefault(sid, {})
@@ -661,10 +669,14 @@ class MakerTrader(LiveTrader):
     def on_settle(self, win, winner, used, results):
         st = self.win_stats.pop(win.slug, None)
         if not st or st["orders"] == 0:
+            self.win_hist.append(dict(slug=win.slug, start=win.start, winner=winner, pnl=0.0, pnl_api=None, orders=0,
+                                      filled=0, up=0.0, dn=0.0))
             return
         payout = st["shares"][winner]
         cost = sum(st["usdc"].values())
         pnl_est = payout - cost
+        self.win_hist.append(dict(slug=win.slug, start=win.start, winner=winner, pnl=pnl_est, pnl_api=None,
+                                  orders=st["orders"], filled=st["filled"], up=st["shares"]["Up"], dn=st["shares"]["Down"]))
         self.day_pnl += pnl_est
         self.total_pnl += pnl_est
         self.mstats["windows"] = self.mstats.get("windows", 0) + 1

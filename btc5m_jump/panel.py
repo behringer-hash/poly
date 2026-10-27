@@ -96,9 +96,16 @@ class MarketPanel:
     def panel_text(self, x: dict) -> str:
         jt, tr, now = self.jt, self.trader, x["now"]
         c = jt.c
-        up_h = (now - jt.t_start) / 3600
-        L = [f"btc5m_jump [{self.mode}]  {hms(now)} (время сервера)  работает {int(up_h)} ч {int(up_h * 60) % 60} мин"
-             f"   панель обновляется раз в секунду", "─" * 108]
+        t0 = getattr(tr, "t_start", None) or jt.t_start
+        up_s = max(0, int(now - t0))
+        L = [f"btc5m_jump [{self.mode}]  {hms(now)} (время сервера)   ВРЕМЯ РАБОТЫ {up_s // 3600} ч {up_s // 60 % 60:02d} мин "
+             f"{up_s % 60:02d} с (запуск {hms(t0)})   панель обновляется раз в секунду", "─" * 108]
+        pos = self.positions(now) if tr is not None else []
+        if tr is not None:
+            unreal = sum(p["mtm"] for p in pos if p["mtm"] is not None)
+            L.append(f"PnL  закрытые окна {tr.total_pnl:+.2f}$ (сегодня {tr.day_pnl:+.2f}$) | открытые позиции по mid {unreal:+.2f}$ | "
+                     f"ИТОГО {tr.total_pnl + unreal:+.2f}$" + ("   (dry/sign: исполнение теневое)" if self.mode != "live" else
+                                                              "   (live: окна - по сверке с Polymarket, где она уже прошла)"))
         win = x.get("win")
         if win is None:
             L.append("РЫНОК  окна нет (ждём следующее)")
@@ -151,6 +158,22 @@ class MarketPanel:
         s5s = sum(1 for t, k in jt.sig_hist if t >= now - 300 and k == "strong")
         L.append(f"  сигналов с запуска: сильных {st['strong']}, слабых {st['weak']} | за 5 мин: сильных {s5s}, слабых {len(s5) - s5s}"
                  f" | пропуски: книга {st['skip_book']}, время {st['skip_time']}, цена {st['skip_price']}, σ {st['skip_sigma']}")
+        # позиции
+        if tr is not None:
+            L.append("ПОЗИЦИИ  купленные токены (держим до исхода), средняя цена без комиссии"
+                     + ("; live: по цене заявки - верхняя оценка" if self.mode == "live" else ""))
+            if not pos:
+                L.append("  нет")
+            for p in pos:
+                su = p["avg"]["Up"]
+                sd_ = p["avg"]["Down"]
+                both = f"{su + sd_:.3f}" if su is not None and sd_ is not None else "—"
+                L.append(f"  окно {hms(p['start'])[:5]}–{hms(p['start'] + 300)[:5]}  Up {p['qty']['Up']:.0f} шт по {f(su, '.3f')} | "
+                         f"Down {p['qty']['Down']:.0f} шт по {f(sd_, '.3f')} | сумма средних {both} | вложено ${p['cost']:.2f} "
+                         f"(комиссии ${p['fee']:.2f})")
+                L.append(f"  {'':18}если Up: {p['if']['Up']:+.2f}$, если Down: {p['if']['Down']:+.2f}$ | по mid сейчас: "
+                         ("—" if p["mtm"] is None else f"{p['mtm']:+.2f}$") + (f" | ждут итога заявок: {p['pending']:.0f} шт" if p["pending"] > 1e-9 else ""))
+            L.extend(self.pnl_chart(list(tr.win_hist)[-20:]))
         # заявки
         if tr is not None:
             m = tr.mstats
@@ -179,6 +202,63 @@ class MarketPanel:
                      f" {g['move']:+6.1f}$ {100 * g['dF']:+5.1f}ц   {f(info.get('q'), '.2f'):>5}  {g['bid']:.2f}/{g['ask']:.2f}"
                      f"   {g['lat_ms']:5.0f} | {f(sent, '.0f'):>4} | {f(http, '.0f'):>5}     {res}")
         return "\n".join(L) + "\n"
+
+    def positions(self, now: float) -> list[dict]:
+        """Позиции открытых (ещё не рассчитанных) окон: шейры и средняя цена по сторонам, сценарии исхода, оценка по mid."""
+        out = []
+        for slug, st in list(self.trader.win_stats.items()):
+            fills = st.get("fills", [])
+            qty = {"Up": 0.0, "Down": 0.0}
+            val = {"Up": 0.0, "Down": 0.0}
+            fee = 0.0
+            for fl in fills:
+                qty[fl["outcome"]] += fl["qty"]
+                val[fl["outcome"]] += fl["q"] * fl["qty"]
+                fee += fl.get("fee", 0.0)
+            pending = sum(st.get("pending", {}).values())
+            if qty["Up"] + qty["Down"] <= 1e-9 and pending <= 1e-9:
+                continue
+            try:
+                start = int(str(slug).rsplit("-", 1)[-1])
+            except ValueError:
+                continue
+            cost = val["Up"] + val["Down"] + fee
+            win = self.pm.windows.get(start) if hasattr(self.pm, "windows") else None
+            mtm = None
+            if win is not None:
+                mids = {}
+                for side in ("Up", "Down"):
+                    b = win.books[side]
+                    mids[side] = (b.bb + b.ba) / 2 if b.bb is not None and b.ba is not None else None
+                if all(mids[k] is not None for k in mids if qty[k] > 0):
+                    mtm = sum(qty[k] * mids[k] for k in mids if qty[k] > 0) - cost
+            out.append(dict(start=start, qty=qty, avg={k: (val[k] / qty[k] if qty[k] > 0 else None) for k in qty}, cost=cost,
+                            fee=fee, pending=pending, mtm=mtm, **{"if": {k: qty[k] - cost for k in qty}}))
+        return sorted(out, key=lambda p: p["start"])
+
+    @staticmethod
+    def pnl_chart(hist: list[dict], h: int = 4) -> list[str]:
+        """Столбики PnL по окнам (старые слева): вверх - плюс, вниз - минус; высота по максимуму модуля."""
+        if not hist:
+            return ["PnL ПО ОКНАМ  закрытых окон пока нет"]
+        vals = [x["pnl_api"] if x.get("pnl_api") is not None else x["pnl"] for x in hist]
+        m = max(abs(v) for v in vals) or 1.0
+        pos_n = sum(v > 1e-9 for v in vals)
+        neg_n = sum(v < -1e-9 for v in vals)
+        L = [f"PnL ПО ОКНАМ  последние {len(vals)}: сумма {sum(vals):+.2f}$, в плюсе {pos_n}, в минусе {neg_n}, без сделок/нулевых "
+             f"{len(vals) - pos_n - neg_n}; лучшее {max(vals):+.2f}$, худшее {min(vals):+.2f}$, среднее {sum(vals) / len(vals):+.2f}$"]
+        for lv in range(h, 0, -1):
+            thr = m * (lv - 0.5) / h
+            lab = f"{m:+7.2f}" if lv == h else " " * 7
+            L.append(f"  {lab} │" + "".join(" ██" if v >= thr else "   " for v in vals))
+        L.append(f"  {0:7.2f} ┼" + "───" * len(vals))
+        for lv in range(1, h + 1):
+            thr = m * (lv - 0.5) / h
+            lab = f"{-m:+7.2f}" if lv == h else " " * 7
+            L.append(f"  {lab} │" + "".join(" ██" if v <= -thr else "   " for v in vals))
+        first, last = hms(hist[0]["start"])[:5], hms(hist[-1]["start"])[:5]
+        L.append(f"  {'':7}  " + f" {first}".ljust(3 * len(vals) - 5) + last)
+        return L
 
     def write_panel(self, text: str):
         tmp = self.path + ".tmp"

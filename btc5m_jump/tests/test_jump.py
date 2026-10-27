@@ -251,3 +251,34 @@ def test_pulse_and_panel_render():
     txt = p.panel_text(x)
     assert "ТРИГГЕР" in txt and "сильный от $" in txt and "ИСПОЛНЕНА" in txt and "ПОСЛЕДНИЕ СИГНАЛЫ" in txt
     print("\n" + line + "\n" + txt)
+
+
+def test_panel_positions_pnl_and_chart():
+    import random
+    import panel
+    t, win, jt = _panel_env()
+    panel.clock = jump.clock
+
+    async def go():
+        jt.on_trade("fut", 0, 0, 100000.0)
+        jt.on_trade("fut", 100, 0, 100008.0)          # сильный вверх -> Up 5 шт @0.50 тейкером
+        jt.on_trade("spot", 0, 0, 100000.0)
+        jt.on_trade("spot", 100, 0, 99992.0)          # сильный вниз -> Down 5 шт @0.52
+        await asyncio.sleep(0.6)
+    run(go())
+    p = panel.MarketPanel(jt, t.pm, t, "dry", None, 1)
+    pos = p.positions(jump.clock.now())
+    assert len(pos) == 1 and pos[0]["qty"] == {"Up": 5.0, "Down": 5.0}
+    assert abs(pos[0]["avg"]["Up"] - 0.50) < 1e-9 and abs(pos[0]["avg"]["Down"] - 0.52) < 1e-9
+    txt = p.panel_text(p.snapshot(jump.clock.now()))
+    assert "сумма средних 1.020" in txt and "ВРЕМЯ РАБОТЫ" in txt and "ИТОГО" in txt
+    t.on_settle(win, "Up", "provisional", {})
+    assert t.win_hist[-1]["pnl"] < 0 and not t.win_stats      # сумма средних > 1 + комиссии -> убыток при любом исходе
+    random.seed(3)
+    for i in range(25):
+        t.win_hist.append(dict(slug=f"s{i}", start=win.start + 300 * (i + 1), winner="Up", pnl=random.uniform(-3, 4), pnl_api=None,
+                               orders=5, filled=2, up=5, dn=0))
+    t.win_hist[-1]["pnl_api"] = 9.0                         # сверка с Polymarket важнее оценки
+    chart = p.pnl_chart(list(t.win_hist)[-20:])
+    assert "последние 20" in chart[0] and "+9.00" in chart[1] and len(chart) == 1 + 4 + 1 + 4 + 1
+    print("\n" + p.panel_text(p.snapshot(jump.clock.now())))
