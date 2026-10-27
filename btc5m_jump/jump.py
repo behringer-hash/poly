@@ -7,7 +7,8 @@
     sd = sigma * sqrt(T - 40) при T >= 60, иначе sigma * sqrt(T^3 / 10800); w = 1 при T >= 60, иначе T / 60;
     sigma - секундная волатильность этого источника за 15 минут ($/sqrt(с));
   * ступени: |dF| >= thr_strong (6 ц) - заявка по ask + 1 ц; thr_weak (3 ц) <= |dF| < thr_strong - по ask (слой объёма);
-  * растущая сторона: dS > 0 - Up, dS < 0 - Down; её bid должен быть в 0,05-0,95, до конца окна 12-295 с;
+  * растущая сторона: dS > 0 - Up, dS < 0 - Down; её bid - в границах ступени (сильные 0,01-0,99, слабые 0,10-0,99,
+    подбор по записи P18), до конца окна 12-295 с;
   * пауза (на окно и сторону): сильный - не чаще раза в refractory_sec (1 с) между сильными; слабый - не раньше
     refractory_sec после любого сигнала этой стороны.
 Сигнал уходит в MakerTrader.on_signal (live_maker.py): обычный лимит на покупку, живёт maker_life_sec (0,5 с), позиция до исхода.
@@ -41,8 +42,13 @@ JUMP_DEFAULTS = {
     "jump_sigma_min_sec": 300,       # не торговать, пока волатильность источника набрана меньше чем за N секунд
     "jump_t_min": 12.0,              # секунд до конца окна: от
     "jump_t_max": 295.0,             # до
-    "jump_bid_min": 0.05,
-    "jump_bid_max": 0.95,
+    # bid растущей стороны (подбор по записи, P18): сильные - без ограничения, слабые - от 0,10 (0,05-0,10 стабильно в минус)
+    "jump_bid_min_strong": 0.01,
+    "jump_bid_max_strong": 0.99,
+    "jump_bid_min_weak": 0.10,
+    "jump_bid_max_weak": 0.99,
+    "jump_bid_min": 0.01,            # общие внешние границы (для обеих ступеней)
+    "jump_bid_max": 0.99,
     "jump_max_book_lag_ms": 1000.0,  # наша книга отстаёт от сервера больше - не торгуем (обрыв/перегрузка)
     "jump_pulse_sec": 1,             # строка ПУЛЬС в консоли раз в N секунд (0 - не выводить)
     "jump_panel": True,              # панель panel.txt в папке данных, обновляется раз в секунду
@@ -180,7 +186,9 @@ class JumpTrigger:
             return None
         side = "Up" if dS > 0 else "Down"
         b = win.books[side]
-        if b.bb is None or b.ba is None or not (float(c["jump_bid_min"]) <= b.bb <= float(c["jump_bid_max"])):
+        lo = max(float(c["jump_bid_min"]), float(c[f"jump_bid_min_{tier}"]))
+        hi = min(float(c["jump_bid_max"]), float(c[f"jump_bid_max_{tier}"]))
+        if b.bb is None or b.ba is None or not (lo - 1e-9 <= b.bb <= hi + 1e-9):
             self.stats["skip_price"] += 1
             return None
         # пауза: сильные - не чаще раза в refractory_sec между сильными (слабые их не блокируют);

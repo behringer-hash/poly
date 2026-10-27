@@ -112,7 +112,7 @@ def test_filters_time_bid_and_small_moves():
     jt.on_trade("fut", 0, 0, 100000.0)
     jt.on_trade("fut", 100, 0, 100020.0)
     assert rec.sigs == [] and jt.stats["skip_time"] == 1
-    jt, win, rec = make(up=(0.96, 0.97))                  # bid растущей стороны 0.96 > 0.95
+    jt, win, rec = make(up=(0.96, 0.97), jump_bid_max_strong=0.95)   # bid растущей стороны 0.96 > 0.95
     jt.on_trade("fut", 0, 0, 100000.0)
     jt.on_trade("fut", 100, 0, 100500.0)
     assert rec.sigs == []
@@ -289,3 +289,13 @@ def test_gtd_expiration_at_least_server_minimum_even_with_old_config():
     t, win = trader("live", Client(), order_type="GTD", gtd_expire_sec=90)     # старый конфиг: 90 с
     order = t._make_order("UT", 0.5, 5)
     assert order["expiration"] >= _t.time() + 239                               # сервер требует > 180 с
+
+
+def test_bid_bounds_per_tier():
+    # слабые: bid растущей стороны от 0,10; сильные - от 0,01
+    jt, win, rec = make(up=(0.07, 0.08))                  # Up дешёвый: bid 0.07
+    jt.on_trade("fut", 0, 0, 100000.0)
+    jt.on_trade("fut", 100, 0, 100006.0)                  # слабый вверх (сдвиг ~4 ц, Up по 0.07) - отсекается
+    assert rec.sigs == [] and jt.stats["skip_price"] == 1
+    jt.on_trade("fut", 200, 0, 100018.0)                  # сильный вверх (~8 ц) - проходит
+    assert len(rec.sigs) == 1 and rec.sigs[0]["tier"] == "strong" and rec.sigs[0]["outcome"] == "Up"

@@ -18,6 +18,11 @@
   "jump_price_weak": "ask",
   "jump_price_strong": "ask1",
   "jump_refractory_sec": 1.0,
+  "jump_bid_min_strong": 0.01,
+  "jump_bid_max_strong": 0.99,
+  "jump_bid_min_weak": 0.1,
+  "jump_bid_max_weak": 0.99,
+  "_jump_bid": "границы bid растущей стороны по ступеням - подобраны по записи 12-27.10 (P18): у сильных любое ограничение цены уменьшает доход, у слабых полоса 0,05-0,10 стабильно убыточна",
   "_jump": "сигнал: ход BTC на Binance (фьючерс или спот, кто первый) за 100 мс; сдвиг справедливой цены от 3 ц - лимит по ask (слой объёма), от 6 ц - лимит по ask + 1 ц; пауза 1 с на (окно, сторону, ступень)",
   "jump_sigma_min_sec": 300,
   "_jump_sigma_min_sec": "первые 5 минут после запуска бот набирает волатильность источников и сигналов не даёт",
@@ -41,8 +46,8 @@
   "min_seconds_left": 10,
   "min_interval_sec": 0,
   "max_consecutive_errors": 5,
-  "price_min": 0.05,
-  "price_max": 0.96,
+  "price_min": 0.01,
+  "price_max": 0.99,
   "stop_file": "STOP",
   "presign": true,
   "presign_max_age_sec": 8,
@@ -53,5 +58,6 @@
   "max_spend_per_day": 1000000000,
   "max_loss_per_day": 1000000000,
   "max_loss_total": null,
-  "_limits": "лимиты сняты: огромные числа и null для общего убытка (не проверяется)"
+  "_limits": "лимиты сняты: огромные числа и null для общего убытка (не проверяется)",
+  "_price": "price_min / price_max - границы цены самой заявки (0,01-0,99 = без ограничения; отбор по цене - в jump_bid_*)"
 }
