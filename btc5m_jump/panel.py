@@ -200,7 +200,12 @@ class MarketPanel:
                      + (f" | по книге/сделкам рынка: {m['shadow_filled']}" if self.mode == "live" else ""))
             L.append(f"  ответ сервера (последние {len(hh)}): p50/p90 {f(qs(hh, .5), '.0f')}/{f(qs(hh, .9), '.0f')} мс | траты сегодня "
                      f"${tr.day_spend:.0f}" + (f" из ${spend_lim:.0f}" if spend_lim and spend_lim < 1e8 else "")
-                     + f" | PnL закрытых окон {tr.total_pnl:+.2f}$" + (f" | {tr.stopped_reason}" if tr.stopped_reason else ""))
+                     + f" | PnL закрытых окон {tr.total_pnl:+.2f}$")
+            if tr.stopped_reason:
+                L.append(f"  !!! ЗАЯВКИ НЕ СТАВЯТСЯ: {tr.stopped_reason} (нужен перезапуск после устранения причины)")
+            le = getattr(tr, "last_error", None)
+            if le:
+                L.append(f"  последняя ошибка постановки {hms(le[0])}: {le[1]} {le[2][:150]}")
         # последние сигналы
         L.append("ПОСЛЕДНИЕ СИГНАЛЫ  задержки: биржа→бот | сигнал→отправка | ответ сервера")
         L.append("  время         сторона ступень источ.   ход      ΔF     заявка  bid/ask     задержки, мс          итог")
@@ -208,7 +213,9 @@ class MarketPanel:
             info = tr.recent.get(g["sid"], {}) if tr is not None else {}
             sent = (1000 * (info["t_sent"] - g["t"])) if info.get("t_sent") else None
             http = info.get("http_ms")
-            if info.get("done"):
+            if info.get("err"):
+                res = f"НЕ ПОСТАВЛЕНА: {info['err'][:70]}"
+            elif info.get("done"):
                 fl = info.get("filled") or 0
                 res = (f"ИСПОЛНЕНА {fl:.0f} @{info.get('px', 0):.2f}" + (" тейкер" if info.get("taker") else "")) if fl > 0 else "не исполнена"
             else:
@@ -272,7 +279,7 @@ class MarketPanel:
             lab = f"{-m:+7.2f}" if lv == h else " " * 7
             L.append(f"  {lab} │" + "".join(" ██" if v <= -thr else "   " for v in vals))
         first, last = hms(hist[0]["start"])[:5], hms(hist[-1]["start"])[:5]
-        L.append(f"  {'':7}  " + f" {first}".ljust(3 * len(vals) - 5) + last)
+        L.append(f"  {'':7}  " + (f" {first}".ljust(max(3 * len(vals) - 5, 7)) + last if len(vals) > 1 else f" {first}"))
         return L
 
     def write_panel(self, text: str):

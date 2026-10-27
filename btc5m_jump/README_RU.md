@@ -66,7 +66,7 @@
 cd ~ && unzip btc5m_jump.zip                      # создаст папку ~/btc5m_jump
 cd ~/btc5m_jump && chmod +x run_*.sh
 pip3 install -r requirements.txt --break-system-packages
-python3 -m pytest -q tests                        # должно быть: 44 passed
+python3 -m pytest -q tests                        # должно быть: 45 passed
 nano config_jump_sign.json                        # вписать funder, проверить signature_type (у вас 3)
 ```
 

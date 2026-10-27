@@ -42,6 +42,7 @@ FEE_RATE = 0.07
 TAKER_CHECK_SEC = 0.335   # теневая проверка заявки по ask: исполнилась ли сразу (удержание биржей 150 мс + дорога)
 MODE_NAME = {"join": "по bid", "improve": "bid+1", "ask": "по ask", "ask1": "ask+1"}
 TAKER_MODES = ("ask", "ask1")      # обычный лимит, может исполниться сразу тейкером
+GTD_MIN_SEC = 240                  # нижняя граница срока GTD: сервер отклоняет срок меньше 180 с (+ запас на предподпись)
 
 MAKER_LIVE_SCHEMAS = {
     "maker_orders": ["sid", "slug", "outcome", "t_signal", "t_sent", "t_resp", "http_ms", "price", "size", "mode", "status",
@@ -58,7 +59,8 @@ MAKER_DEFAULTS = {
     "ab_modes": ["improve", "ask"],
     "maker_life_sec": 2.0,         # сколько секунд заявка стоит в книге
     "order_type": "GTD",           # GTD (со страховочным сроком) или GTC
-    "gtd_expire_sec": 90,          # срок GTD-заявки от момента подписи (у биржи порог не меньше минуты)
+    "gtd_expire_sec": 300,         # срок GTD-заявки от момента подписи; сервер требует не меньше 180 с (ответ
+                                   # 'expiration is less than 180 seconds in the future'), меньше GTD_MIN_SEC не ставим
     "max_open_orders": 2,
     "one_order_per_side": True,    # False - по каждому сигналу своя заявка, даже если прошлая на этой стороне ещё стоит
     "max_consecutive_errors": 5,
@@ -106,6 +108,7 @@ class MakerTrader(LiveTrader):
         self.http_hist = deque(maxlen=100)       # время ответа сервера по последним заявкам, мс
         self.win_hist = deque(maxlen=60)         # итоги закрытых окон (для панели): slug, start, winner, pnl, pnl_api
         self.t_start = clock.now()
+        self.last_error = None                   # (время, статус, текст) последней ошибки постановки - для панели
 
     def on_reconciled(self, slug, pnl):
         """Сверка окна с Polymarket (live, из потока сверки): точный PnL окна - в историю для панели."""
@@ -146,7 +149,7 @@ class MakerTrader(LiveTrader):
     def _make_order(self, tok, px, sz):
         kw = dict(token_id=tok, price=px, size=sz, side=self._BUY)
         if str(self.m("order_type")).upper() == "GTD":
-            kw["expiration"] = int(time.time()) + int(self.m("gtd_expire_sec"))
+            kw["expiration"] = int(time.time()) + max(int(self.m("gtd_expire_sec")), GTD_MIN_SEC)
         return self.client.create_order(self._OrderArgs(**kw), self._Opts(tick_size="0.01"))
 
     # ------------------------------------------------------------------ цена и лимиты
@@ -300,6 +303,9 @@ class MakerTrader(LiveTrader):
         e.update(oid=r["oid"], t_sent=r["t_sent"], t_resp=r["t_resp"])
         self._note(e["sid"], status=r["status"], q=e["q"], mode=e["mode"], t_sent=r["t_sent"], http_ms=r["http_ms"],
                    sign_ms=r["sign_ms"], presigned=r["presigned"])
+        if r["err"] and r["status"] in ("error", "exception", "rejected_cross"):
+            self._note(e["sid"], err=r["err"])
+            self.last_error = (clock.now(), r["status"], r["err"])
         if r["http_ms"]:
             self.http_hist.append(r["http_ms"])
         self.w.write("maker_orders", (e["sid"], e["slug"], e["outcome"], e["t_signal"], r["t_sent"], r["t_resp"],

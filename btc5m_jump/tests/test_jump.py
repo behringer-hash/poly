@@ -282,3 +282,10 @@ def test_panel_positions_pnl_and_chart():
     chart = p.pnl_chart(list(t.win_hist)[-20:])
     assert "последние 20" in chart[0] and "+9.00" in chart[1] and len(chart) == 1 + 4 + 1 + 4 + 1
     print("\n" + p.panel_text(p.snapshot(jump.clock.now())))
+
+
+def test_gtd_expiration_at_least_server_minimum_even_with_old_config():
+    import time as _t
+    t, win = trader("live", Client(), order_type="GTD", gtd_expire_sec=90)     # старый конфиг: 90 с
+    order = t._make_order("UT", 0.5, 5)
+    assert order["expiration"] >= _t.time() + 239                               # сервер требует > 180 с

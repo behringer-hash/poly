@@ -112,7 +112,7 @@ def test_live_cycle_post_only_cancel_and_accounting():
         await asyncio.sleep(0.5)
     run(go())
     order, typ, post_only = cl.posted[0]
-    assert post_only and typ == "GTD" and order["price"] == 0.49 and order["expiration"] > time.time() + 60
+    assert post_only and typ == "GTD" and order["price"] == 0.49 and order["expiration"] > time.time() + 180
     assert cl.canceled == ["O1"]
     st = t.win_stats[win.slug]
     assert st["shares"]["Up"] == 5 and abs(st["usdc"]["Up"] - 5 * 0.49) < 1e-9 and st["pending"]["Up"] == 0
