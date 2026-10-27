@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Режим live: НАСТОЯЩИЕ заявки, с лимитами из config_jump_live.json (копия config_jump_live.example.json). Бот попросит ввести «ДА».
 cd "$(dirname "$0")" || exit 1
+[ -f STOP ] && { echo "есть файл STOP (аварийная остановка с прошлого запуска): удалите его командой  rm STOP  и запустите снова"; exit 1; }
 [ -f config_jump_live.json ] || { echo "нет config_jump_live.json: скопируйте config_jump_live.example.json и впишите funder"; exit 1; }
 if [ -z "${PM_PRIVATE_KEY:-}" ]; then
   read -r -s -p "Приватный ключ (не отображается и не сохраняется): " PM_PRIVATE_KEY; echo
