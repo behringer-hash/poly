@@ -44,10 +44,12 @@ JUMP_DEFAULTS = {
     "jump_bid_min": 0.05,
     "jump_bid_max": 0.95,
     "jump_max_book_lag_ms": 1000.0,  # наша книга отстаёт от сервера больше - не торгуем (обрыв/перегрузка)
-    "jump_urls_fut": ["wss://fstream.binance.com/ws/btcusdt@aggTrade",
-                      "wss://fstream.binance.com/market/stream?streams=btcusdt@aggTrade",
-                      "wss://fstream.binance.com/stream?streams=btcusdt@aggTrade"],
-    "jump_urls_spot": ["wss://stream.binance.com:9443/ws/btcusdt@aggTrade",
+    # первыми - адреса, проверенные на сервере в Токио (latency_probe 26.10); остальные - запасные
+    "jump_urls_fut": ["wss://fstream.binance.com/market/stream?streams=btcusdt@aggTrade",
+                      "wss://fstream.binance.com/stream?streams=btcusdt@aggTrade",
+                      "wss://fstream.binance.com/ws/btcusdt@aggTrade"],
+    "jump_urls_spot": ["wss://stream.binance.com:9443/stream?streams=btcusdt@aggTrade",
+                       "wss://stream.binance.com:9443/ws/btcusdt@aggTrade",
                        "wss://data-stream.binance.vision/ws/btcusdt@aggTrade"],
 }
 
