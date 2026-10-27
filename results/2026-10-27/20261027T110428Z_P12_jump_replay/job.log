@@ -1,0 +1,9 @@
+2026-10-20: сделок 1938891 (фьючерс 1144857, спот 794034)
+  only3: сильных 0, слабых 7217 | {'moves': 1175617, 'weak': 7217, 'strong': 0, 'sent': 0, 'skip_book': 270587, 'skip_sigma': 0, 'skip_time': 71283, 'skip_price': 16881}
+  only6: сильных 0, слабых 2849 | {'moves': 1175617, 'weak': 2849, 'strong': 0, 'sent': 0, 'skip_book': 270587, 'skip_sigma': 0, 'skip_time': 71283, 'skip_price': 13208}
+  prod: сильных 2849, слабых 7168 | {'moves': 1175617, 'weak': 7168, 'strong': 2849, 'sent': 0, 'skip_book': 270587, 'skip_sigma': 0, 'skip_time': 71283, 'skip_price': 16881}
+2026-10-26: сделок 1245381 (фьючерс 595736, спот 649645)
+  only3: сильных 0, слабых 3067 | {'moves': 622075, 'weak': 3067, 'strong': 0, 'sent': 0, 'skip_book': 124430, 'skip_sigma': 0, 'skip_time': 40895, 'skip_price': 6273}
+  only6: сильных 0, слабых 1186 | {'moves': 622075, 'weak': 1186, 'strong': 0, 'sent': 0, 'skip_book': 124430, 'skip_sigma': 0, 'skip_time': 40895, 'skip_price': 3816}
+  prod: сильных 1186, слабых 3054 | {'moves': 622075, 'weak': 3054, 'strong': 1186, 'sent': 0, 'skip_book': 124430, 'skip_sigma': 0, 'skip_time': 40895, 'skip_price': 6273}
+  прошло 226 с
