@@ -1,0 +1,9 @@
+pm_top: 135936 строк
+bnf_agg: 87494 строк
+bn_agg: 125338 строк
+pm_trades: 41456 строк
+job.log 0
+xs_bn.csv.gz 475759
+xs_bnf.csv.gz 458363
+xs_top.csv.gz 1557648
+xs_trades.csv.gz 448209
