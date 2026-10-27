@@ -172,7 +172,7 @@ class MarketPanel:
                          f"Down {p['qty']['Down']:.0f} шт по {f(sd_, '.3f')} | сумма средних {both} | вложено ${p['cost']:.2f} "
                          f"(комиссии ${p['fee']:.2f})")
                 L.append(f"  {'':18}если Up: {p['if']['Up']:+.2f}$, если Down: {p['if']['Down']:+.2f}$ | по mid сейчас: "
-                         ("—" if p["mtm"] is None else f"{p['mtm']:+.2f}$") + (f" | ждут итога заявок: {p['pending']:.0f} шт" if p["pending"] > 1e-9 else ""))
+                         + ("—" if p["mtm"] is None else f"{p['mtm']:+.2f}$") + (f" | ждут итога заявок: {p['pending']:.0f} шт" if p["pending"] > 1e-9 else ""))
             L.extend(self.pnl_chart(list(tr.win_hist)[-20:]))
         # заявки
         if tr is not None:
