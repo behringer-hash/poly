@@ -214,3 +214,40 @@ def test_weak_paused_after_strong_but_strong_not_after_weak():
     assert [s["tier"] for s in rec.sigs] == ["weak", "strong", "weak"]
     jt.on_trade("fut", 1600, 0, 99990.0)                  # другая сторона (Down) - своя пауза
     assert rec.sigs[-1]["outcome"] == "Down"
+
+
+def _panel_env(tmp_path=None):
+    t, win = trader("dry", maker_price="ab", ab_modes=["ask", "ask1"], one_order_per_side=False, max_open_orders=100,
+                    maker_life_sec=0.1, shadow_match_sec=0.05, variant="jump")
+    win.end, win.book_lag_ms, win.ptb = win.start + 300, 120.0, 100000.0
+    win.ready = lambda: True
+    win.books["Up"].asks = {0.50: 30.0}
+    win.books["Down"].asks = {0.52: 30.0}
+    jump.clock = FakeClock(win.start + 150.0)
+    t.pm.tw = {int(win.start + 148): 100012.4}
+    t.pm.cl = {int(win.start + 149): 100013.0}
+    jt = JumpTrigger(dict(variant="jump", jump_sigma_min_sec=0), t.pm, t.w, t)
+    for s in jt.src.values():
+        s.sig.sigma = lambda: 2.0
+    return t, win, jt
+
+
+def test_pulse_and_panel_render():
+    import panel
+    t, win, jt = _panel_env()
+    panel.clock = jump.clock
+
+    async def go():
+        jt.on_trade("fut", 0, 0, 100000.0)
+        jt.on_trade("fut", 100, 0, 100008.0)
+        jt.on_trade("spot", 0, 0, 100003.0)
+        jt.on_trade("spot", 50, 0, 100004.0)
+        await asyncio.sleep(0.6)
+    run(go())
+    p = panel.MarketPanel(jt, t.pm, t, "dry", None, 1)
+    x = p.snapshot(jump.clock.now())
+    line = p.pulse_line(x)
+    assert "Up 0.48/0.50" in line and "Down 0.50/0.52" in line and "TWAP60−PTB +12.4$" in line and "спот 100004.0" in line
+    txt = p.panel_text(x)
+    assert "ТРИГГЕР" in txt and "сильный от $" in txt and "ИСПОЛНЕНА" in txt and "ПОСЛЕДНИЕ СИГНАЛЫ" in txt
+    print("\n" + line + "\n" + txt)

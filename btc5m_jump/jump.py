@@ -44,6 +44,8 @@ JUMP_DEFAULTS = {
     "jump_bid_min": 0.05,
     "jump_bid_max": 0.95,
     "jump_max_book_lag_ms": 1000.0,  # наша книга отстаёт от сервера больше - не торгуем (обрыв/перегрузка)
+    "jump_pulse_sec": 1,             # строка ПУЛЬС в консоли раз в N секунд (0 - не выводить)
+    "jump_panel": True,              # панель panel.txt в папке данных, обновляется раз в секунду
     # первыми - адреса, проверенные на сервере в Токио (latency_probe 26.10); остальные - запасные
     "jump_urls_fut": ["wss://fstream.binance.com/market/stream?streams=btcusdt@aggTrade",
                       "wss://fstream.binance.com/stream?streams=btcusdt@aggTrade",
@@ -78,8 +80,12 @@ class Source:
         self.h: deque = deque()
         self.sig = RollingSigma(900, 5.0)
         self.lat = Quantiles()
+        self.lat_hist: deque = deque()      # (время приёма, задержка мс) за последнюю минуту - для панели
         self.n = 0
         self.alive = 0.0
+        self.last_px = None                 # цена и ход за W мс последней сделки - для пульса и панели
+        self.last_dS = 0.0
+        self.last_T = None
 
     def add(self, T_ms: float, px: float) -> None:
         h = self.h
@@ -112,6 +118,10 @@ class JumpTrigger:
         self.last: dict[tuple, float] = {}
         self.sid = 0
         self.stats = dict(moves=0, weak=0, strong=0, sent=0, skip_book=0, skip_sigma=0, skip_time=0, skip_price=0)
+        self.evals: deque = deque(maxlen=20000)      # (время, источник, dS, dF) каждой оценки - для панели
+        self.recent_sigs: deque = deque(maxlen=12)   # последние сигналы с задержками - для панели
+        self.sig_hist: deque = deque(maxlen=20000)   # (время, ступень) сигналов - счёт за 5 минут
+        self.t_start = clock.now()
 
     def m(self, k):
         return self.c[k]
@@ -121,9 +131,11 @@ class JumpTrigger:
         s = self.src[name]
         p0 = s.price_before(T_ms - self.W)
         s.add(T_ms, px)
+        s.last_px, s.last_T = px, T_ms
         if p0 is None:
             return
         dS = px - p0
+        s.last_dS = dS
         if abs(dS) < float(self.m("jump_min_move_usd")):
             return
         self.evaluate(name, T_ms, recv, dS)
@@ -158,6 +170,7 @@ class JumpTrigger:
             return None
         sigma = s.sig.sigma()
         dF = fair_shift(mid, T, sigma, dS)
+        self.evals.append((now, name, dS, dF))
         a = abs(dF)
         if a >= float(c["jump_thr_strong"]):
             tier, mode = "strong", str(c["jump_price_strong"])
@@ -190,6 +203,9 @@ class JumpTrigger:
                                       round(dS, 2), round(sigma, 3), round(mid, 4), round(dF, 5), tier, mode, win.slug, side,
                                       round(T, 2), b.bb, b.ba, b.bids.get(b.bb), b.asks.get(b.ba),
                                       round(win.book_lag_ms, 1) if win.book_lag_ms is not None else None, "signal"))
+        self.sig_hist.append((now, tier))
+        self.recent_sigs.append(dict(sig, lat_ms=recv * 1000 - T_ms + pm.offset_ms, recv=recv, dF=dF, mid=mid, sigma=sigma,
+                                     bid=b.bb, ask=b.ba))
         if self.trader is not None:
             self.stats["sent"] += 1
             self.trader.on_signal(sig)
@@ -216,7 +232,11 @@ class JumpTrigger:
                         got += 1
                         T_ms = float(x["T"])
                         s.alive = recv
-                        s.lat.add(recv * 1000 - T_ms + self.pm.offset_ms)
+                        lat = recv * 1000 - T_ms + self.pm.offset_ms
+                        s.lat.add(lat)
+                        s.lat_hist.append((recv, lat))
+                        while s.lat_hist and s.lat_hist[0][0] < recv - 60:
+                            s.lat_hist.popleft()
                         self.on_trade(name, T_ms, recv, float(x["p"]))
             except Exception as ex:
                 log("jump", f"Binance {name} разорван ({ex!r})"[:200])

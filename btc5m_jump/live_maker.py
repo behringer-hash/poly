@@ -31,6 +31,7 @@ import json
 import os
 import random
 import time
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -101,6 +102,15 @@ class MakerTrader(LiveTrader):
         self.watchdog_every = 5.0
         self.mstats = dict(signals=0, placed=0, skipped=0, filled=0, shares=0.0, shadow_filled=0, shadow_shares=0.0, trades_seen=0)
         self.mode_stats: dict[str, dict] = {}    # режим цены -> заявок, исполнено, шейров, PnL (для A/B)
+        self.recent: dict[int, dict] = {}        # номер сигнала -> постановка и итог (для панели jump)
+        self.http_hist = deque(maxlen=100)       # время ответа сервера по последним заявкам, мс
+
+    def _note(self, sid, **kw):
+        d = self.recent.setdefault(sid, {})
+        d.update(kw)
+        if len(self.recent) > 300:
+            for k in list(self.recent)[:100]:
+                self.recent.pop(k, None)
 
     def m(self, key):
         return self.c.get(key, MAKER_DEFAULTS[key])
@@ -213,12 +223,14 @@ class MakerTrader(LiveTrader):
         st = self.win_stats.setdefault(s["slug"], self._new_st())
         if q is None:
             self.mstats["skipped"] += 1
+            self._note(s["sid"], status="нет цены")
             emit(f"{ts(s['t'])} СИГНАЛ #{s['sid']} {s['outcome']} - заявка не ставится: нет цены ниже ask (bid {b.bb}, ask {b.ba})")
             return
         size = order_size(float(self.c["size"]), q)
         why = self.check_maker_limits(s, st, q, size)
         if why:
             self.mstats["skipped"] += 1
+            self._note(s["sid"], status="пропуск: " + why)
             emit(f"{ts(s['t'])} СИГНАЛ #{s['sid']} {s['outcome']} - заявка не ставится: {why}")
             return
         life = float(self.m("maker_life_sec"))
@@ -278,6 +290,10 @@ class MakerTrader(LiveTrader):
 
     def _placed(self, e, r):
         e.update(oid=r["oid"], t_sent=r["t_sent"], t_resp=r["t_resp"])
+        self._note(e["sid"], status=r["status"], q=e["q"], mode=e["mode"], t_sent=r["t_sent"], http_ms=r["http_ms"],
+                   sign_ms=r["sign_ms"], presigned=r["presigned"])
+        if r["http_ms"]:
+            self.http_hist.append(r["http_ms"])
         self.w.write("maker_orders", (e["sid"], e["slug"], e["outcome"], e["t_signal"], r["t_sent"], r["t_resp"],
                                       round(r["http_ms"], 1) if r["http_ms"] else None, e["q"], e["size"], self.mode,
                                       r["status"], r["oid"], r["err"], e["bid"], e["ask"], e["ahead"],
@@ -412,6 +428,8 @@ class MakerTrader(LiveTrader):
         if e["shadow_qty"] > 0:
             self.mstats["shadow_filled"] += 1
             self.mstats["shadow_shares"] += e["shadow_qty"]
+        self._note(e["sid"], filled=filled, px=px, taker=bool(e.get("shadow_taker")), done=True,
+                   cancel=r["cancel_status"][:20] if r["cancel_status"] else "")
         self.w.write("maker_final", (e["sid"], e["slug"], e["outcome"], e["oid"], e["q"], e["size"], r["t_cancel"],
                                      round(r["cancel_ms"], 1) if r["cancel_ms"] else None, r["cancel_status"],
                                      r["size_matched"], r["order_status"], round(e["shadow_qty"], 3),

@@ -80,16 +80,22 @@ def main():
     pmx.paper.listener = trader          # итоги окон -> учёт
     pmx.maker = trader.hook              # сделки рынка -> теневое исполнение
     jt = JumpTrigger(lcfg, pmx, pmx.w, trader)
+    from panel import MarketPanel
+    os.makedirs(cfg.data_dir, exist_ok=True)
+    panel_path = os.path.join(cfg.data_dir, "panel.txt") if jc.get("jump_panel", True) else None
+    panel = MarketPanel(jt, pmx, trader, a.mode, panel_path, float(jc.get("jump_pulse_sec", 1) or 0))
 
     emit(f"\033[96mБот стратегии 3 запущен ({a.mode}). Ход Binance ({', '.join(jc['jump_sources'])}) за "
          f"{jc['jump_window_ms']} мс: сдвиг цены от {100 * jc['jump_thr_weak']:.0f} ц - лимит {jc['jump_price_weak']}, "
          f"от {100 * jc['jump_thr_strong']:.0f} ц - {jc['jump_price_strong']}; {lcfg['size']} шейров, живёт "
          f"{lcfg.get('maker_life_sec', 0.5)} с. Сигналы начнутся, когда наберётся волатильность "
          f"({jc['jump_sigma_min_sec']} с). Данные: {os.path.abspath(cfg.data_dir)}\033[0m")
+    if panel_path:
+        emit(f"Панель (обновляется раз в секунду): {os.path.abspath(panel_path)} - смотреть во втором окне: ./run_panel.sh {a.mode}")
 
     async def run_all():
         await asyncio.gather(pmx.main(), trader.keepalive(), trader.warm_loop(), trader.presign_loop(),
-                             trader.stats_loop(), *trader.extra_tasks(), *jt.tasks())
+                             trader.stats_loop(), *trader.extra_tasks(), *jt.tasks(), panel.run())
 
     try:
         asyncio.run(run_all())
