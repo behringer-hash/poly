@@ -92,11 +92,14 @@ def main():
     ap.add_argument("--modes", nargs="*", help="цены заявки, вместо MODES")
     ap.add_argument("--dms", nargs="*", help="модели момента сведения, вместо DMS")
     ap.add_argument("--tag", default="t3", help="префикс выходных файлов")
+    ap.add_argument("--profiles", nargs="*", help="профили задержек (tokyo, stockholm), по умолчанию оба")
     ap.add_argument("--tiers", nargs=2, type=float, metavar=("WEAK", "STRONG"),
                     help="рабочее правило бота: сдвиг от WEAK - лимит по ask (слабые), от STRONG - ask + 1 ц (сильные); "
                          "пауза сильных - между сильными, слабых - после любого сигнала стороны")
     a = ap.parse_args()
-    global RULES, MODES, DMS
+    global RULES, MODES, DMS, PROFILES
+    if a.profiles:
+        PROFILES = {k: v for k, v in PROFILES.items() if k in a.profiles}
     strong = None
     if a.tiers:
         RULES, strong = [("tiers", a.tiers[0])], a.tiers[1]
@@ -206,7 +209,10 @@ def main():
                     trw = tr.by.get(w)
                     S = SRV_Q[rng.integers(len(SRV_Q))]
                     for dm in DMS:
-                        t_live = t_arr + {"d150": 0.0, "half": (S - TAKER_DELAY) / 2, "resp": S - TAKER_DELAY}[dm]
+                        if dm.startswith("f"):         # f<D>: сведение ровно через D мс после решения (живой запуск: 0,5-1,5 с)
+                            t_live = r.t_dec + float(dm[1:]) - TAKER_DELAY
+                        else:
+                            t_live = t_arr + {"d150": 0.0, "half": (S - TAKER_DELAY) / 2, "resp": S - TAKER_DELAY}[dm]
                         v_live = bk.view(w, t_live, "srv")
                         t_m = t_live + TAKER_DELAY
                         vm = bk.view(w, t_m, "srv")
