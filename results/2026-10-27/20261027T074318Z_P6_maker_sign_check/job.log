@@ -1,0 +1,15 @@
+1.1M	/home/lab/incoming/maker_data_sign
+2026-10-26
+2026-10-27
+заявок 1294, итогов 1265, окон windows 267, live_windows 242
+дни теста: ['2026-10-26', '2026-10-27']
+строк книги сервера 1102424, с 2026-10-26 13:22:27.878000 по 2026-10-27 07:43:21.161000
+заявок с книгой сервера 1107
+total 124
+drwxr-xr-x  2 lab lab  4096 Oct 27 07:43 .
+drwxr-xr-x 17 lab lab  4096 Oct 27 07:43 ..
+-rw-r--r--  1 lab lab   344 Oct 27 07:43 job.log
+-rw-r--r--  1 lab lab 20385 Oct 27 07:43 mk_final.csv.gz
+-rw-r--r--  1 lab lab 43659 Oct 27 07:43 mk_orders.csv.gz
+-rw-r--r--  1 lab lab 41950 Oct 27 07:43 mk_srvbook.csv.gz
+-rw-r--r--  1 lab lab  1470 Oct 27 07:43 mk_windows.csv.gz
