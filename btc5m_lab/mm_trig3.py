@@ -94,13 +94,16 @@ def main():
     ap.add_argument("--dms", nargs="*", help="модели момента сведения, вместо DMS")
     ap.add_argument("--tag", default="t3", help="префикс выходных файлов")
     ap.add_argument("--profiles", nargs="*", help="профили задержек (tokyo, stockholm), по умолчанию оба")
+    ap.add_argument("--p-edges", nargs="*", type=float, help="границы корзин цены (bid растущей стороны) в выходе, вместо P_ED")
     ap.add_argument("--price-range", nargs=2, type=float, metavar=("LO", "HI"),
                     help="как в боте: сигнал - только если bid растущей стороны в [LO, HI], заявка - только если её цена в [LO, HI]")
     ap.add_argument("--tiers", nargs=2, type=float, metavar=("WEAK", "STRONG"),
                     help="рабочее правило бота: сдвиг от WEAK - лимит по ask (слабые), от STRONG - ask + 1 ц (сильные); "
                          "пауза сильных - между сильными, слабых - после любого сигнала стороны")
     a = ap.parse_args()
-    global RULES, MODES, DMS, PROFILES, PX_LO, PX_HI, Q_LO, Q_HI
+    global RULES, MODES, DMS, PROFILES, PX_LO, PX_HI, Q_LO, Q_HI, P_ED
+    if a.p_edges:
+        P_ED = list(a.p_edges)
     if a.price_range:
         PX_LO, PX_HI = a.price_range
         Q_LO, Q_HI = a.price_range
