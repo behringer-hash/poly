@@ -1,0 +1,101 @@
+2026-10-12:
+                              ev   tk   mk   итог
+prof      thr  dm   mode                         
+stockholm 0.03 resp strong  1450  209   53   79.5
+                    weak    3574  482  112  100.7
+tokyo     0.03 resp strong  1431  183   42   64.7
+                    weak    3546  392  104   48.4
+  прошло 12 с
+2026-10-13:
+                              ev   tk   mk  итог
+prof      thr  dm   mode                        
+stockholm 0.03 resp strong  2555  411  107  71.4
+                    weak    6494  933  187  49.2
+tokyo     0.03 resp strong  2520  340   87  88.3
+                    weak    6438  780  143  58.8
+  прошло 56 с
+2026-10-14:
+                              ev    tk   mk  итог
+prof      thr  dm   mode                         
+stockholm 0.03 resp strong  2843   535  112  33.5
+                    weak    7623  1293  261  77.2
+tokyo     0.03 resp strong  2806   446   90  42.4
+                    weak    7552  1067  189  36.5
+  прошло 76 с
+2026-10-15:
+                              ev    tk   mk   итог
+prof      thr  dm   mode                          
+stockholm 0.03 resp strong  2976   735  126  205.3
+                    weak    8927  1757  340  126.3
+tokyo     0.03 resp strong  2915   627  102  206.5
+                    weak    8840  1544  253  260.8
+  прошло 109 с
+2026-10-16:
+                              ev    tk   mk   итог
+prof      thr  dm   mode                          
+stockholm 0.03 resp strong  2943   613  148  223.4
+                    weak    7398  1335  257  198.2
+tokyo     0.03 resp strong  2903   529  108  169.4
+                    weak    7339  1205  202  156.0
+  прошло 133 с
+2026-10-17:
+                              ev   tk  mk   итог
+prof      thr  dm   mode                        
+stockholm 0.03 resp strong  1848  471  71  116.1
+                    weak    2857  594  88  137.6
+tokyo     0.03 resp strong  1818  441  63  121.5
+                    weak    2828  563  69  190.2
+  прошло 148 с
+2026-10-18:
+                              ev   tk   mk   итог
+prof      thr  dm   mode                         
+stockholm 0.03 resp strong  2597  552  119  132.5
+                    weak    5250  980  160   46.4
+tokyo     0.03 resp strong  2552  489  118  158.3
+                    weak    5194  852  153   76.6
+  прошло 167 с
+2026-10-19:
+                              ev   tk   mk   итог
+prof      thr  dm   mode                         
+stockholm 0.03 resp strong  2710  454  114  -14.8
+                    weak    6244  838  177  176.8
+tokyo     0.03 resp strong  2662  364   95   30.8
+                    weak    6186  708  140   26.8
+  прошло 187 с
+2026-10-20:
+                              ev    tk   mk   итог
+prof      thr  dm   mode                          
+stockholm 0.03 resp strong  2853   516  106   55.2
+                    weak    7110  1068  221  -48.2
+tokyo     0.03 resp strong  2829   433   86  128.3
+                    weak    7036   898  171   50.1
+  прошло 207 с
+2026-10-21:
+                              ev   tk   mk  итог
+prof      thr  dm   mode                        
+stockholm 0.03 resp strong  1717  389   81  67.8
+                    weak    3698  663  129  31.4
+tokyo     0.03 resp strong  1704  331   69  89.7
+                    weak    3670  535  106  51.2
+  прошло 233 с
+2026-10-26:
+                              ev   tk   mk   итог
+prof      thr  dm   mode                         
+stockholm 0.03 resp strong  1191  363   63  111.3
+                    weak    3020  712  157  133.0
+tokyo     0.03 resp strong  1184  351   55  103.4
+                    weak    2992  627  107  139.1
+  прошло 244 с
+2026-10-27:
+                              ev   tk  mk   итог
+prof      thr  dm   mode                        
+stockholm 0.03 resp strong  1298  419  61   74.0
+                    weak    2585  697  85  157.4
+tokyo     0.03 resp strong  1286  391  50  118.0
+                    weak    2576  578  75  123.7
+  прошло 252 с
+2026-10-20: сделок 1938891 (фьючерс 1144857, спот 794034)
+  only3: сильных 0, слабых 7217 | {'moves': 1175617, 'weak': 7217, 'strong': 0, 'sent': 0, 'skip_book': 270587, 'skip_sigma': 0, 'skip_time': 71283, 'skip_price': 16881}
+  only6: сильных 0, слабых 2849 | {'moves': 1175617, 'weak': 2849, 'strong': 0, 'sent': 0, 'skip_book': 270587, 'skip_sigma': 0, 'skip_time': 71283, 'skip_price': 13208}
+  prod: сильных 2849, слабых 7094 | {'moves': 1175617, 'weak': 7094, 'strong': 2849, 'sent': 0, 'skip_book': 270587, 'skip_sigma': 0, 'skip_time': 71283, 'skip_price': 16881}
+  прошло 378 с
