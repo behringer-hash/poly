@@ -1,0 +1,112 @@
+    ev = events(T, p, q, W, X, refr=2000.0)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/poly/btc5m_lab/jump_study.py", line 62, in events
+    dS = np.where(j >= 0, p - p[np.maximum(j, 0)], 0.0)
+                              ~^^^^^^^^^^^^^^^^^^
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 180. MiB for an array with shape (23574176,) and data type float64
+  прошло 92 с
+    values = _astype_nansafe(values, dtype, copy=copy)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/venv/lib/python3.12/site-packages/pandas/core/dtypes/astype.py", line 134, in _astype_nansafe
+    return arr.astype(dtype, copy=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 12.4 MiB for an array with shape (1620590,) and data type object
+  прошло 174 с
+2026-10-14: источники fut 1280357, spot 853003, bybit 1700102, okx 1425854, cb 515545
+  события fut: 11393, в окнах с книгой 8662
+  события spot: 6687, в окнах с книгой 5089
+  прошло 256 с
+2026-10-15: источники fut 1823901, spot 1106957, bybit 2124017, okx 1964810, cb 533033
+  события fut: 16384, в окнах с книгой 12625
+  события spot: 9872, в окнах с книгой 7605
+  прошло 366 с
+2026-10-16: источники fut 1189647, spot 885385, bybit 1381256, okx 1194015, cb 474983
+  события fut: 10621, в окнах с книгой 8181
+  события spot: 6094, в окнах с книгой 4656
+  прошло 438 с
+2026-10-17: источники fut 460995, spot 531807, bybit 436904, okx 355054, cb 320102
+  события fut: 2350, в окнах с книгой 1893
+  события spot: 1795, в окнах с книгой 1450
+  прошло 465 с
+2026-10-18: источники fut 773765, spot 648711, bybit 928553, okx 759429, cb 269160
+  события fut: 5900, в окнах с книгой 4545
+  события spot: 4322, в окнах с книгой 3320
+  прошло 513 с
+2026-10-19: источники fut 1002852, spot 689508, bybit 1214902, okx 1056254, cb 404675
+  события fut: 8499, в окнах с книгой 6400
+  события spot: 4739, в окнах с книгой 3543
+  прошло 576 с
+2026-10-20: источники fut 1144857, spot 794034, bybit 1568861, okx 1280568, cb 428656
+  события fut: 10418, в окнах с книгой 7832
+  события spot: 6603, в окнах с книгой 4936
+  прошло 642 с
+2026-10-21: источники fut 504584, spot 381024, bybit 668292, okx 588505, cb 210506
+  события fut: 4103, в окнах с книгой 3164
+  события spot: 2787, в окнах с книгой 2166
+  прошло 686 с
+2026-10-26: источники fut 595736, spot 649645, bybit 714274, okx 625688, cb 252417, fut_book 17935982
+  события fut: 4777, в окнах с книгой 3691
+  события spot: 2976, в окнах с книгой 2323
+  прошло 807 с
+2026-10-27: источники fut 264945, spot 317781, bybit 365656, okx 284653, cb 138332, fut_book 10535580
+  события fut: 2188, в окнах с книгой 1675
+  события spot: 1618, в окнах с книгой 1266
+  прошло 860 с
+ 
+4096 .
+4096 ..
+3332 job.log
+6201 js_cnt_2026-10-14.csv.gz
+6392 js_cnt_2026-10-15.csv.gz
+6153 js_cnt_2026-10-16.csv.gz
+5466 js_cnt_2026-10-17.csv.gz
+5941 js_cnt_2026-10-18.csv.gz
+6025 js_cnt_2026-10-19.csv.gz
+6108 js_cnt_2026-10-20.csv.gz
+5065 js_cnt_2026-10-21.csv.gz
+5985 js_cnt_2026-10-26.csv.gz
+5657 js_cnt_2026-10-27.csv.gz
+3765 js_dist_2026-10-12.csv.gz
+3265 js_dist_2026-10-14.csv.gz
+3296 js_dist_2026-10-15.csv.gz
+3231 js_dist_2026-10-16.csv.gz
+3022 js_dist_2026-10-17.csv.gz
+3115 js_dist_2026-10-18.csv.gz
+3208 js_dist_2026-10-19.csv.gz
+3242 js_dist_2026-10-20.csv.gz
+3093 js_dist_2026-10-21.csv.gz
+3733 js_dist_2026-10-26.csv.gz
+3551 js_dist_2026-10-27.csv.gz
+822398 js_ev_2026-10-14_fut_p0.csv.gz
+952386 js_ev_2026-10-14_fut_p1.csv.gz
+869548 js_ev_2026-10-14_fut_p2.csv.gz
+1637253 js_ev_2026-10-14_spot.csv.gz
+984304 js_ev_2026-10-15_fut_p0.csv.gz
+937783 js_ev_2026-10-15_fut_p1.csv.gz
+1029910 js_ev_2026-10-15_fut_p2.csv.gz
+953097 js_ev_2026-10-15_fut_p3.csv.gz
+823316 js_ev_2026-10-15_spot_p0.csv.gz
+818638 js_ev_2026-10-15_spot_p1.csv.gz
+843330 js_ev_2026-10-15_spot_p2.csv.gz
+769005 js_ev_2026-10-16_fut_p0.csv.gz
+849833 js_ev_2026-10-16_fut_p1.csv.gz
+832999 js_ev_2026-10-16_fut_p2.csv.gz
+1476204 js_ev_2026-10-16_spot.csv.gz
+497850 js_ev_2026-10-17_fut.csv.gz
+390300 js_ev_2026-10-17_spot.csv.gz
+1301657 js_ev_2026-10-18_fut.csv.gz
+977264 js_ev_2026-10-18_spot.csv.gz
+616019 js_ev_2026-10-19_fut_p0.csv.gz
+671526 js_ev_2026-10-19_fut_p1.csv.gz
+632011 js_ev_2026-10-19_fut_p2.csv.gz
+1117326 js_ev_2026-10-19_spot.csv.gz
+770556 js_ev_2026-10-20_fut_p0.csv.gz
+835645 js_ev_2026-10-20_fut_p1.csv.gz
+802183 js_ev_2026-10-20_fut_p2.csv.gz
+1600068 js_ev_2026-10-20_spot.csv.gz
+917883 js_ev_2026-10-21_fut.csv.gz
+649259 js_ev_2026-10-21_spot.csv.gz
+1237626 js_ev_2026-10-26_fut.csv.gz
+809900 js_ev_2026-10-26_spot.csv.gz
+508534 js_ev_2026-10-27_fut.csv.gz
+390737 js_ev_2026-10-27_spot.csv.gz
