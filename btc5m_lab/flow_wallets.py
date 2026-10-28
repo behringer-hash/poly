@@ -54,6 +54,7 @@ def prep(root, tapes, store):
     del A, tx1
     wins = pd.Series(win, dtype=float)
     for d in (T, M):
+        d["txi"] = d.tx.str[2:17].map(lambda h: int(h, 16) if isinstance(h, str) and len(h) == 15 else -1)
         d["dir"], up = updir(d.outcome, d.side)
         d["p"] = np.where(up, d.price, 1 - d.price)
         d["won"] = d.w.map(wins)
@@ -97,15 +98,16 @@ def prep(root, tapes, store):
         P = pd.DataFrame(pairs, columns=["ei", "ti", "dt"])
         ev["wallet"] = ev.ei.map(P.set_index("ei").ti.map(Tc.wallet))
         ev["tape_dt"] = ev.ei.map(P.set_index("ei").dt)
+        ev["txi"] = ev.ei.map(P.set_index("ei").ti.map(Tc.txi)).fillna(-1).astype("int64")
         print(f"{day}: заявок сборщика {len(ev)}, с кошельком {ev.wallet.notna().mean():.1%}; тейкеров ленты в окне "
               f"{len(Tc)}, сопоставлено {len(P) / max(len(Tc), 1):.1%}", flush=True)
         keep = ["w", "t", "dir", "o", "side", "p", "p_tok", "size", "usd", "levels", "spr0", "dS1", "dS5", "dSf1", "won",
-                "spread", "m1", "m5", "m30", "m60", "edge", "fee", "wallet", "tape_dt"]
+                "spread", "m1", "m5", "m30", "m60", "edge", "fee", "wallet", "tape_dt", "txi", "mid0", "mid1", "mid5", "mid60"]
         ev = ev[keep]
         ev.round(4).to_csv(os.path.join(store, f"ev_{day}.csv.gz"), index=False)
     T[["w", "rel", "wallet", "dir", "p", "size", "usd", "won", "edge", "fee", "round_usd"]].round(4).to_csv(
         os.path.join(store, f"tk_{day}.csv.gz"), index=False)
-    M[["w", "rel", "wallet", "dir", "p", "size", "usd", "won", "edge", "taker", "depth"]].round(4).to_csv(
+    M[["w", "rel", "wallet", "dir", "p", "size", "usd", "won", "edge", "taker", "depth", "txi"]].round(4).to_csv(
         os.path.join(store, f"mk_{day}.csv.gz"), index=False)
     # кошелёк x день (без «пыли»: цена Up >= 0,985 или <= 0,015 - добор почти решённого исхода, раздувает оборот)
     dT, dM = (T.p >= 0.985) | (T.p <= 0.015), (M.p >= 0.985) | (M.p <= 0.015)
@@ -152,11 +154,19 @@ def lab(edges, fmt=lambda x: f"{x:g}"):
 TNAMES = ["a) 1-3 окна", "b) 4-20", "c) 21-100", "d) 101-500", "e) >500 окон"]
 
 
+def frames(store, kind):
+    for f in sorted(glob.glob(os.path.join(store, f"{kind}_*.csv.gz"))):
+        yield pd.read_csv(f, dtype={"wallet": str, "taker": str})
+
+
 def acc(store, kind, by_fn, metrics, extra_cols=()):
     """Суммы по (срез, окно) для взвешенных средних и кластерной погрешности; читает файлы по дням."""
+    return acc_df(frames(store, kind) if isinstance(kind, str) else kind, by_fn, metrics)
+
+
+def acc_df(it, by_fn, metrics):
     parts = []
-    for f in sorted(glob.glob(os.path.join(store, f"{kind}_*.csv.gz"))):
-        d = pd.read_csv(f, dtype={"wallet": str, "taker": str})
+    for d in it:
         d = d[(d.p < 0.985) & (d.p > 0.015)]                      # без «пыли»
         d["key"] = by_fn(d)
         d = d.dropna(subset=["key"])
@@ -286,9 +296,110 @@ def agg(store, out):
     report(a, mt, "внутри окна: по дням")
 
 
+# ---------------------------------------------------------------- agg2: где именно зарабатывают мейкеры
+TB = [-700, -63, -15, 0, 60, 240, 300, 400]
+TBL = ["0) до T-63", "1) T-63..-15", "2) T-15..0", "3) 0..60", "4) 60..240", "5) 240..300", "6) после"]
+DB = [-0.1, 0.5, 1.5, 3.5, 6.5, 100]
+DBL = ["0) лучший", "1) 1 ц", "2) 2-3 ц", "3) 4-6 ц", "4) 7+ ц"]
+
+
+def mk_ev(store):
+    """мейкерские записи + мс-заявка тейкера той же транзакции (ход BTC, mid через 1/5/60 с)"""
+    for f in sorted(glob.glob(os.path.join(store, "mk_*.csv.gz"))):
+        day = os.path.basename(f)[3:-7]
+        m = pd.read_csv(f, dtype={"wallet": str, "taker": str})
+        fe = os.path.join(store, f"ev_{day}.csv.gz")
+        if os.path.exists(fe):
+            e = pd.read_csv(fe, usecols=["txi", "t", "dS1", "dS5", "mid0", "mid1", "mid5", "mid60", "levels", "size"])
+            e = e[e.txi >= 0].drop_duplicates("txi").rename(columns={"size": "tsize"})
+            m = m.merge(e, on="txi", how="left")
+            for h in (0, 1, 5, 60):
+                m[f"k{h}"] = 100 * m["dir"] * (m[f"mid{h}"] - m.p)     # маркаут мейкера к mid через h с
+        yield m
+
+
+def agg2(store, out):
+    W = pd.read_csv(os.path.join(store, "wallets_all.csv.gz"), index_col=0, dtype={"tier": str, "role": str})
+    tier, role = W.tier.astype(str).to_dict(), W.role.astype(str).to_dict()
+    tb = lambda d: pd.cut(d.rel, TB, labels=TBL).astype(str)
+    db = lambda d: pd.cut(d.depth, DB, labels=DBL).astype(str)
+    a = acc(store, "mk", lambda d: tb(d) + " | " + db(d), ["edge"])
+    report(a, ["edge"], "мейкеры: время ленты x глубина уровня (ц от лучшего уровня транзакции)")
+    a = acc(store, "mk", lambda d: db(d) + " | тейкер " + d.taker.map(tier).astype(str), ["edge"])
+    report(a, ["edge"], "мейкеры: глубина x ярус тейкера")
+    a = acc(store, "mk", lambda d: d.wallet.map(tier).astype(str) + " | " + db(d), ["edge"])
+    report(a, ["edge"], "мейкеры: ярус мейкера x глубина")
+    btc = lambda d: pd.cut(d.dS1, [-1e9, -10, -3, 3, 10, 1e9],                # dS1 уже со знаком тейкера
+                           labels=["0) < -10", "1) -10..-3", "2) спокойно", "3) 3..10", "4) > 10"]).astype(str)
+    calm = lambda d: np.where((d.dS1.abs() < 3) & (d.dS5.abs() < 10), "спокойно", "ход BTC")
+    mt = ["edge", "k0", "k1", "k5", "k60"]
+    a = acc(store, mk_ev(store), lambda d: ("BTC за 1 с в сторону тейкера " + btc(d)).where(d.dS1.notna()), mt)
+    report(a, mt, "мейкеры внутри окна: ход BTC до сделки (в сторону тейкера); k = маркаут мейкера к mid через N с",
+           se_for=("edge", "k60"))
+    a = acc(store, mk_ev(store), lambda d: (pd.Series(calm(d), index=d.index) + " | " + db(d)).where(d.dS1.notna()), mt)
+    report(a, mt, "мейкеры внутри окна: BTC спокоен (|за 1 с| < 3 и |за 5 с| < 10) или нет x глубина", se_for=("edge", "k60"))
+    a = acc(store, mk_ev(store), lambda d: (pd.cut(d.tsize, [0, 10, 50, 200, 1000, 1e9], labels=lab(SZ)).astype(str) + " | "
+                                           + pd.Series(calm(d), index=d.index)).where(d.dS1.notna()), mt)
+    report(a, mt, "мейкеры внутри окна: размер заявки тейкера x BTC", se_for=("edge", "k60"))
+    # кто когда торгует: доля оборота тейкеров по ярусам во времени
+    rows = []
+    for d in frames(store, "tk"):
+        d = d[(d.p < 0.985) & (d.p > 0.015)]
+        d = d.assign(tb=tb(d), tr=d.wallet.map(tier).astype(str), xe=d["size"] * d.edge)
+        rows.append(d.groupby(["tb", "tr"]).agg(usd=("usd", "sum"), sh=("size", "sum"), xe=("xe", "sum")))
+    g = pd.concat(rows).groupby(level=[0, 1]).sum()
+    share = (g.usd / g.usd.groupby(level=0).transform("sum")).unstack().round(3)
+    print("\n=== доля оборота тейкеров по ярусу кошелька во времени окна ===\n" + share.to_string())
+    print("\n=== результат тейкеров по исходу (ц/шейр) по ярусу во времени ===\n" +
+          (g.xe / g.sh).unstack().round(2).to_string())
+    print("\n=== оборот тейкеров, $ тыс в сутки ===\n" + (g.usd.unstack() / 1e3 / 12).round(1).to_string())
+    # профили мейкеров: 15 лучших по мейкерскому результату + 10 крупнейших по мейкерскому обороту
+    sel = list(W.sort_values("pnl_mk", ascending=False).head(15).index) + \
+        list(W.sort_values("usd_mk", ascending=False).head(10).index) + \
+        list(W.sort_values("pnl_mk").head(5).index)
+    sel = list(dict.fromkeys(sel))
+    prof = []
+    for d in mk_ev(store):
+        d = d[d.wallet.isin(sel) & (d.p < 0.985) & (d.p > 0.015)]
+        d = d.assign(db=db(d), tb=tb(d), xe=d["size"] * d.edge, x5=d["size"] * d.k5.fillna(0), s5=d["size"] * d.k5.notna(),
+                     am=d.taker.map(tier).astype(str).str[:1].isin(["a", "b", "c"]) * d["size"],
+                     calm=(pd.Series(calm(d), index=d.index) == "спокойно") * d["size"] * d.dS1.notna(),
+                     sev=d["size"] * d.dS1.notna())
+        prof.append(d.groupby(["wallet", "db"]).agg(sh=("size", "sum"), xe=("xe", "sum")).assign(kind="d"))
+        prof.append(d.groupby(["wallet", "tb"]).agg(sh=("size", "sum"), xe=("xe", "sum")).rename_axis(["wallet", "db"])
+                    .assign(kind="t"))
+        prof.append(d.groupby("wallet").agg(sh=("size", "sum"), xe=("xe", "sum"), x5=("x5", "sum"), s5=("s5", "sum"),
+                                            am=("am", "sum"), calm=("calm", "sum"), sev=("sev", "sum"), n=("size", "size"),
+                                            w=("w", "nunique"))
+                    .assign(db="все", kind="a").set_index("db", append=True))
+    P = pd.concat(prof).groupby(level=[0, 1]).sum(numeric_only=True)
+    rows = []
+    for wl in sel:
+        if wl not in P.index.get_level_values(0):
+            continue
+        p = P.loc[wl]
+        tot = p.loc["все"]
+        r = dict(кошелёк=wl[:10], окон=int(W.loc[wl, "win"]), мейкер_тыс=round(W.loc[wl, "usd_mk"] / 1e3),
+                 доля_мейкер=round(W.loc[wl, "maker_share"], 2), pnl_мейкер=round(W.loc[wl, "pnl_mk"]),
+                 pnl_тейкер=round(W.loc[wl, "pnl_tk"]), ц_шейр=round(tot.xe / tot.sh, 2),
+                 маркаут5с=round(tot.x5 / tot.s5, 2) if tot.s5 > 0 else np.nan,
+                 ср_размер=round(tot.sh / tot.n, 1), от_любителей=round(tot.am / tot.sh, 2),
+                 при_спокойном_BTC=round(tot.calm / tot.sev, 2) if tot.sev > 0 else np.nan)
+        for lb in DBL:
+            r["гл" + lb[:1]] = round(p.sh.get(lb, 0) / tot.sh, 2)
+        for lb in TBL[:6]:
+            r["вр" + lb[:1]] = round(p.sh.get(lb, 0) / tot.sh, 2)
+        r["ц_гл0"] = round(p.xe.get(DBL[0], np.nan) / p.sh.get(DBL[0], np.nan), 2) if p.sh.get(DBL[0], 0) else np.nan
+        r["ц_гл2+"] = round(sum(p.xe.get(x, 0) for x in DBL[2:]) / max(sum(p.sh.get(x, 0) for x in DBL[2:]), 1), 2)
+        rows.append(r)
+    print("\n=== профили мейкеров (гл0..4 - доля шейров по глубине: лучший, 1 ц, 2-3, 4-6, 7+; вр0..5 - по времени: "
+          "до T-63, T-63..-15, -15..0, 0..60, 60..240, 240..300; от_любителей - доля шейров против тейкеров с 1-100 окнами) ===")
+    print(pd.DataFrame(rows).to_string(index=False))
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["prep", "agg"])
+    ap.add_argument("cmd", choices=["prep", "agg", "agg2"])
     ap.add_argument("root", nargs="?")
     ap.add_argument("--tapes", default=os.path.expanduser("~/tapes"))
     ap.add_argument("--store", default=os.path.expanduser("~/flow"))
@@ -298,8 +409,10 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     if a.cmd == "prep":
         prep(a.root, a.tapes, a.store)
-    else:
+    elif a.cmd == "agg":
         agg(a.store, a.out)
+    else:
+        agg2(a.store, a.out)
 
 
 if __name__ == "__main__":
