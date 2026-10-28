@@ -1,0 +1,19 @@
+2026-10-28: окон 3
+
+поля записи (takerOnly=false): {"proxyWallet": "0x36bc507b4b537693c2be0b3290af85edc56910ca", "side": "SELL", "asset": "471038287119804703073459032124443139671779963464444438551255285742602388063", "conditionId": "0xe4afeb7bf9d26ae5ee6c69e35babbf788bf78f36a11b0f69cf5047b82602ade0", "size": 1.01, "price": 0.999, "timestamp": 1793171135, "title": "Bitcoin Up or Down - October 28, 3:00AM-3:05AM ET", "slug": "btc-updown-5m-1793170800", "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/BTC+fullsize.png", "eventSlug": "btc-updown-5m-1793170800", "outcome": "Up", "outcomeIndex": 0, "name": "Qyshu1", "pseudonym": "Impolite-Enclosure", "bio": "", "profileImage": "", "profileImageOptimized": "", "transactionHash": "0xa3b4812d3f86893eb56696c0db6f7b1c69986dff070cf1d6e969d5c11c836d5e"}
+
+поля записи (takerOnly=true): {"proxyWallet": "0x36bc507b4b537693c2be0b3290af85edc56910ca", "side": "SELL", "asset": "471038287119804703073459032124443139671779963464444438551255285742602388063", "conditionId": "0xe4afeb7bf9d26ae5ee6c69e35babbf788bf78f36a11b0f69cf5047b82602ade0", "size": 1.01, "price": 0.999, "timestamp": 1793171135, "title": "Bitcoin Up or Down - October 28, 3:00AM-3:05AM ET", "slug": "btc-updown-5m-1793170800", "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/BTC+fullsize.png", "eventSlug": "btc-updown-5m-1793170800", "outcome": "Up", "outcomeIndex": 0, "name": "Qyshu1", "pseudonym": "Impolite-Enclosure", "bio": "", "profileImage": "", "profileImageOptimized": "", "transactionHash": "0xa3b4812d3f86893eb56696c0db6f7b1c69986dff070cf1d6e969d5c11c836d5e"}
+2026-10-28: записей 16538, окон 3, 11 с; ошибок 0
+проверка limit=1000 offset=0: 1000 записей
+проверка limit=500 offset=3000: 500 записей
+проверка limit=500 offset=10000: 0 записей
+проверка limit=500 offset=20000: ошибка http 400: {"error":"max historical trades offset of 10000 exceeded"}
+pm_trades этих окон: 4009 строк
+total 988
+drwxr-xr-x  2 lab lab   4096 Oct 28 12:58 .
+drwxr-xr-x 28 lab lab   4096 Oct 28 12:58 ..
+-rw-r--r--  1 lab lab   2045 Oct 28 12:58 job.log
+-rw-r--r--  1 lab lab  91755 Oct 28 12:58 pmtr_2026-10-28.csv.gz
+-rw-r--r--  1 lab lab 894426 Oct 28 12:58 tape_2026-10-28.csv.gz
+-rw-r--r--  1 lab lab    903 Oct 28 12:58 tape_2026-10-28_windows.csv
+-rw-r--r--  1 lab lab   1533 Oct 28 12:58 win_2026-10-28.csv
