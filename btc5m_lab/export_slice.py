@@ -22,6 +22,7 @@ def main():
     ap.add_argument("--t0", type=float, required=True)
     ap.add_argument("--t1", type=float, required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--prefix", default="xs", help="префикс файлов (несколько кусков в одну папку)")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     t0, t1 = a.t0 * 1000, a.t1 * 1000
@@ -29,19 +30,19 @@ def main():
     top = top[(top.o == "U") & (top.recv_ms >= t0) & (top.recv_ms <= t1)].copy()
     top["srv"] = top.recv_ms - top.d
     top = top[["w", "srv", "recv_ms", "bid", "ask", "bid_sz", "ask_sz"]]
-    save_parts(top, os.path.join(a.out, "xs_top"))
+    save_parts(top, os.path.join(a.out, f"{a.prefix}_top"))
     print(f"pm_top: {len(top)} строк", flush=True)
     for name, stream in (("bnf", "bnf_agg"), ("bn", "bn_agg")):
         d = read(a.root, stream, ["recv_ms", "T", "price"]).dropna()
         d = d[(d["T"] >= t0 - 5000) & (d["T"] <= t1)]
-        save_parts(d, os.path.join(a.out, f"xs_{name}"))
+        save_parts(d, os.path.join(a.out, f"{a.prefix}_{name}"))
         print(f"{stream}: {len(d)} строк", flush=True)
     tr = read(a.root, "pm_trades")
     if not tr.empty:
         tcol = "server_ts" if "server_ts" in tr else "recv_ms"
         tr = tr[(tr[tcol] >= t0) & (tr[tcol] <= t1)]
         keep = [c for c in ("server_ts", "recv_ms", "w", "o", "side", "price", "size") if c in tr]
-        save_parts(tr[keep], os.path.join(a.out, "xs_trades"))
+        save_parts(tr[keep], os.path.join(a.out, f"{a.prefix}_trades"))
         print(f"pm_trades: {len(tr)} строк", flush=True)
     for f in sorted(os.listdir(a.out)):
         print(f, os.path.getsize(os.path.join(a.out, f)))
