@@ -399,7 +399,7 @@ def agg2(store, out):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["prep", "agg", "agg2"])
+    ap.add_argument("cmd", choices=["prep", "agg", "agg2", "daily"])
     ap.add_argument("root", nargs="?")
     ap.add_argument("--tapes", default=os.path.expanduser("~/tapes"))
     ap.add_argument("--store", default=os.path.expanduser("~/flow"))
@@ -411,8 +411,61 @@ def main():
         prep(a.root, a.tapes, a.store)
     elif a.cmd == "agg":
         agg(a.store, a.out)
-    else:
+    elif a.cmd == "agg2":
         agg2(a.store, a.out)
+    else:
+        daily(a.store, a.out)
+
+
+
+# ---------------------------------------------------------------- daily: устойчивость главных выводов по дням
+def daily(store, out):
+    W = pd.read_csv(os.path.join(store, "wallets_all.csv.gz"), index_col=0, dtype={"tier": str, "role": str})
+    tier = W.tier.astype(str).str[:1].to_dict()
+    rows = []
+    for m in mk_ev(store):
+        m = m[(m.p < 0.985) & (m.p > 0.015)]
+        day = pd.to_datetime(m.w.min(), unit="s").strftime("%m-%d")
+        mt, tt = m.wallet.map(tier), m.taker.map(tier)
+        calm = (m.dS1.abs() < 3) & (m.dS5.abs() < 10)
+        sets = {
+            "мейкеры глубина 2+ ц": m.depth >= 1.5,
+            "мейкеры глубина 1 ц": (m.depth >= 0.5) & (m.depth < 1.5),
+            "мейкеры лучший уровень": m.depth < 0.5,
+            "мейкеры T-63..-15 глубина 1+": (m.rel > -63) & (m.rel <= -15) & (m.depth >= 0.5),
+            "мейкеры лучший, BTC спокоен": (m.depth < 0.5) & calm & m.dS1.notna(),
+            "мейкеры против хода BTC (тейкер против)": m.dS1 <= -3,
+            "мейкеры по ходу BTC (тейкер по ходу)": m.dS1 >= 3,
+            "крупные мейкеры (e) <- тейкеры a-d": (mt == "e") & tt.isin(["a", "b", "c", "d"]),
+            "крупные мейкеры (e) <- тейкеры e": (mt == "e") & (tt == "e"),
+            "все мейкеры <- тейкеры a-b": tt.isin(["a", "b"]),
+        }
+        for k, msk in sets.items():
+            f = m[msk]
+            if len(f):
+                rows.append(dict(day=day, срез=k, sh=f["size"].sum(), xe=(f["size"] * f.edge).sum(),
+                                 x60=(f["size"] * f.k60.fillna(0)).sum(), s60=(f["size"] * f.k60.notna()).sum()))
+    d = pd.DataFrame(rows)
+    d["ц"] = d.xe / d.sh
+    piv = d.pivot(index="срез", columns="day", values="ц").round(2)
+    tot = d.groupby("срез").agg(sh=("sh", "sum"), xe=("xe", "sum"), x60=("x60", "sum"), s60=("s60", "sum"))
+    piv["всего_ц"] = (tot.xe / tot.sh).round(2)
+    piv["маркаут60_ц"] = (tot.x60 / tot.s60).round(2)
+    piv["дней_в_плюсе"] = (d.pivot(index="срез", columns="day", values="ц") > 0).sum(axis=1).astype(str) + "/" + \
+        d.pivot(index="срез", columns="day", values="ц").notna().sum(axis=1).astype(str)
+    piv["$тыс_в_сутки"] = (tot.xe / 100 / 1e3 / d.day.nunique()).round(1)
+    pd.set_option("display.width", 300)
+    print("=== результат мейкеров по исходу, ц/шейр, по дням ===\n" + piv.to_string())
+    rows = []
+    for t in frames(store, "tk"):
+        t = t[(t.p < 0.985) & (t.p > 0.015)]
+        day = pd.to_datetime(t.w.min(), unit="s").strftime("%m-%d")
+        tr = t.wallet.map(tier)
+        for k in "abcde":
+            f = t[tr == k]
+            rows.append(dict(day=day, ярус=k, ц=(f["size"] * f.edge).sum() / f["size"].sum()))
+    print("\n=== тейкеры по ярусу (a 1-3 окна ... e >500), ц/шейр до комиссии, по дням ===\n" +
+          pd.DataFrame(rows).pivot(index="ярус", columns="day", values="ц").round(2).to_string())
 
 
 if __name__ == "__main__":
