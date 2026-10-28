@@ -54,7 +54,7 @@ def prep(root, tapes, store):
     del A, tx1
     wins = pd.Series(win, dtype=float)
     for d in (T, M):
-        d["txi"] = d.tx.str[2:17].map(lambda h: int(h, 16) if isinstance(h, str) and len(h) == 15 else -1)
+        d["txi"] = d.tx.str[2:15].map(lambda h: int(h, 16) if isinstance(h, str) and len(h) == 13 else -1)  # 52 бита - точно в float
         d["dir"], up = updir(d.outcome, d.side)
         d["p"] = np.where(up, d.price, 1 - d.price)
         d["won"] = d.w.map(wins)
