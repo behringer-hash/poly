@@ -41,7 +41,7 @@ PLACE_MS = 40.0
 PX_LO, PX_HI = 0.05, 0.95
 REBATE = 0.2 * 0.07
 BASE = dict(OFFS=(0, 1, 2, 3), SIZE=10.0, LIMIT=60.0, MAXW=5000.0, START_S=5.0, STOP_S=15.0, prot="asym", SIG_USD=4.0,
-            SIG_W=300.0, CANCEL_MS=175.0, COOLDOWN_MS=1000.0, queue="prop", alone=True)
+            SIG_W=300.0, CANCEL_MS=175.0, COOLDOWN_MS=1000.0, queue="prop", alone=True, qf=1.0)
 VARIANTS = {
     "A0": {},                                             # основное правило
     "A1_noprot": dict(prot="none"),
@@ -52,7 +52,14 @@ VARIANTS = {
     "A6_c300": dict(CANCEL_MS=300.0),
     "A7_qtrades": dict(queue="trades"),
     "A8_sig2": dict(SIG_USD=2.0),
+    # место в очереди: qf - доля объёма уровня впереди нас при постановке (1 - в конце очереди, 0 - первые)
+    "Q0_back": {},
+    "Q1_half": dict(qf=0.5),
+    "Q2_front": dict(qf=0.0),
+    "Q2_front_noprot": dict(qf=0.0, prot="none"),
+    "Q2_front_L123": dict(qf=0.0, OFFS=(1, 2, 3)),
 }
+A_ED = [0.5, 100, 1000, 1e8]
 INF = float("inf")
 T_ED = [0, 30, 60, 120, 180, 240, 270]
 P_ED = [0.1, 0.25, 0.4, 0.6, 0.75, 0.9]
@@ -133,7 +140,7 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
             return np.nan
         return -dirm * (bP[i] - bP[j])                   # ход за 1 с в сторону тейкера (тейкер против мейкера)
 
-    def fill(o, X, t, f):
+    def fill(o, X, t, f, kind):
         nonlocal reb
         o["rem"] -= f
         qty[X] += f
@@ -144,7 +151,7 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
         m5, m60 = win.mid(X, t + 5000), win.mid(X, t + 60000)
         mv = btc_move(t, 1 if X == "U" else -1)
         key = (var, bucket(t / 1000.0 - w, T_ED), o["k"], bucket(mv, B_ED) if np.isfinite(mv) else -1,
-               bucket(o["q"], P_ED))
+               bucket(o["q"], P_ED), kind, bucket(o["A0"], A_ED))
         a = agg.setdefault(key, [0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         a[0] += 1
         a[1] += f
@@ -172,14 +179,14 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
                     if o["rem"] <= 1e-9 or o["ta"] > t or o["dead"] <= t:
                         continue
                     if o["q"] > eff + 1e-9:
-                        fill(o, X, t, o["rem"])
+                        fill(o, X, t, o["rem"], 1)
                     elif abs(o["q"] - eff) < 1e-9:
                         o["traded"] += sz
                         o["A"] -= sz
                         if o["A"] < 0:
                             f = min(-o["A"], o["rem"])
                             o["A"] = 0.0
-                            fill(o, X, t, f)
+                            fill(o, X, t, f, 0)
         elif kd in (1, 2):                            # снимок глубины: отмены впереди
             X = "U" if kd == 1 else "D"
             _, B, S = P.dep[X]
@@ -265,7 +272,9 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
                             if j >= 0:
                                 A = level_size(x[1][j], x[2][j], q)
                         A = 1e9 if not np.isfinite(A) else A
-                    orders[X].append(dict(q=q, k=k, ta=ta, A=A, rem=SIZE, dead=INF,
+                    if prm["qf"] < 1:
+                        A = 0.0 if prm["qf"] <= 0 else (A * prm["qf"] if A < 1e8 else A)
+                    orders[X].append(dict(q=q, k=k, ta=ta, A=A, A0=A, rem=SIZE, dead=INF,
                                           S_prev=A if A < 1e8 else np.nan, traded=0.0))
                     allow -= SIZE
                     cnt["placed"] += 1
@@ -279,7 +288,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("roots", nargs="+")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--variants", default=",".join(VARIANTS))
+    ap.add_argument("--variants", default=",".join(v for v in VARIANTS if v.startswith("A")))
     ap.add_argument("--max-windows", type=int, default=0)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
@@ -318,7 +327,7 @@ def main():
         if bad:
             print(f"{day}: пропущено окон из-за ошибок {len(bad)}, первая: {bad[0]}", flush=True)
         W = pd.DataFrame(wrows)
-        A = pd.DataFrame([dict(day=day, var=k[0], tb=k[1], k=k[2], bb=k[3], pb=k[4], n=v[0], qty=v[1], out=v[2],
+        A = pd.DataFrame([dict(day=day, var=k[0], tb=k[1], k=k[2], bb=k[3], pb=k[4], ft=k[5], ab=k[6], n=v[0], qty=v[1], out=v[2],
                                m5=v[3], s5=v[4], m60=v[5], s60=v[6], reb=v[7]) for k, v in agg.items()])
         W.to_csv(os.path.join(a.out, f"mmwin_{day}.csv.gz"), index=False)
         A.to_csv(os.path.join(a.out, f"mmagg_{day}.csv.gz"), index=False)
