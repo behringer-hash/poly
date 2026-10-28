@@ -156,7 +156,9 @@ TNAMES = ["a) 1-3 окна", "b) 4-20", "c) 21-100", "d) 101-500", "e) >500 ок
 
 def frames(store, kind):
     for f in sorted(glob.glob(os.path.join(store, f"{kind}_*.csv.gz"))):
-        yield pd.read_csv(f, dtype={"wallet": str, "taker": str})
+        d = pd.read_csv(f, dtype={"wallet": str, "taker": str})
+        d["fday"] = os.path.basename(f)[3:-7][5:]
+        yield d
 
 
 def acc(store, kind, by_fn, metrics, extra_cols=()):
@@ -315,6 +317,7 @@ def mk_ev(store):
             m = m.merge(e, on="txi", how="left")
             for h in (0, 1, 5, 60):
                 m[f"k{h}"] = 100 * m["dir"] * (m[f"mid{h}"] - m.p)     # маркаут мейкера к mid через h с
+        m["fday"] = day[5:]
         yield m
 
 
@@ -425,7 +428,7 @@ def daily(store, out):
     rows = []
     for m in mk_ev(store):
         m = m[(m.p < 0.985) & (m.p > 0.015)]
-        day = pd.to_datetime(m.w.min(), unit="s").strftime("%m-%d")
+        day = m.fday.iloc[0]
         mt, tt = m.wallet.map(tier), m.taker.map(tier)
         calm = (m.dS1.abs() < 3) & (m.dS5.abs() < 10)
         sets = {
@@ -459,7 +462,7 @@ def daily(store, out):
     rows = []
     for t in frames(store, "tk"):
         t = t[(t.p < 0.985) & (t.p > 0.015)]
-        day = pd.to_datetime(t.w.min(), unit="s").strftime("%m-%d")
+        day = t.fday.iloc[0]
         tr = t.wallet.map(tier)
         for k in "abcde":
             f = t[tr == k]
