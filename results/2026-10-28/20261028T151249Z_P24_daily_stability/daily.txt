@@ -1,0 +1,25 @@
+Traceback (most recent call last):
+  File "/home/lab/poly/btc5m_lab/flow_wallets.py", line 472, in <module>
+    main()
+  File "/home/lab/poly/btc5m_lab/flow_wallets.py", line 417, in main
+    daily(a.store, a.out)
+  File "/home/lab/poly/btc5m_lab/flow_wallets.py", line 450, in daily
+    piv = d.pivot(index="срез", columns="day", values="ц").round(2)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/venv/lib/python3.12/site-packages/pandas/core/frame.py", line 10988, in pivot
+    return pivot(self, index=index, columns=columns, values=values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/venv/lib/python3.12/site-packages/pandas/core/reshape/pivot.py", line 910, in pivot
+    result = cast("DataFrame", indexed.unstack(columns_listlike))  # type: ignore[arg-type]
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/venv/lib/python3.12/site-packages/pandas/core/series.py", line 4501, in unstack
+    return unstack(self, level, fill_value, sort)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lab/venv/lib/python3.12/site-packages/pandas/core/reshape/reshape.py", line 596, in unstack
+    unstacker = _Unstacker(
+                ^^^^^^^^^^^
+  File "/home/lab/venv/lib/python3.12/site-packages/pandas/core/reshape/reshape.py", line 176, in __init__
+    self._make_selectors()
+  File "/home/lab/venv/lib/python3.12/site-packages/pandas/core/reshape/reshape.py", line 232, in _make_selectors
+    raise ValueError("Index contains duplicate entries, cannot reshape")
+ValueError: Index contains duplicate entries, cannot reshape
