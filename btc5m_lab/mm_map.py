@@ -41,7 +41,12 @@ PLACE_MS = 40.0
 PX_LO, PX_HI = 0.05, 0.95
 REBATE = 0.2 * 0.07
 BASE = dict(OFFS=(0, 1, 2, 3), SIZE=10.0, LIMIT=60.0, MAXW=5000.0, START_S=5.0, STOP_S=15.0, prot="asym", SIG_USD=4.0,
-            SIG_W=300.0, CANCEL_MS=175.0, COOLDOWN_MS=1000.0, queue="prop", alone=True, qf=1.0)
+            SIG_W=300.0, CANCEL_MS=175.0, COOLDOWN_MS=1000.0, queue="prop", alone=True, qf=1.0,
+            MOM_MS=0.0, MOM_C=0.0, MOM_CANCEL=False, prot_src="bnf")
+# M*: как торгует x-MoneyForWhiskas (claude/wallet_moneyforwhiskas_1029.md, раздел 8): заявка только по лучшему bid и
+# только на токен, чей mid вырос >= MOM_C ц за MOM_MS (по книге сборщика); снятие по ходу BTC против на любой из бирж
+# (фьючерс Binance, Bybit, Coinbase); позицию не выравниваем (LIMIT большой).
+_M = dict(OFFS=(0,), MOM_MS=10000.0, MOM_C=3.0, MOM_CANCEL=True, prot_src="all", SIG_USD=3.0, LIMIT=300.0)
 VARIANTS = {
     "A0": {},                                             # основное правило
     "A1_noprot": dict(prot="none"),
@@ -58,6 +63,15 @@ VARIANTS = {
     "Q2_front": dict(qf=0.0),
     "Q2_front_noprot": dict(qf=0.0, prot="none"),
     "Q2_front_L123": dict(qf=0.0, OFFS=(1, 2, 3)),
+    "M0_mom": dict(_M),
+    "M1_nomom": dict(_M, MOM_MS=0.0, MOM_C=0.0, MOM_CANCEL=False),
+    "M2_mom_front": dict(_M, qf=0.0),
+    "M3_mom5s2c": dict(_M, MOM_MS=5000.0, MOM_C=2.0),
+    "M4_mom_keep": dict(_M, MOM_CANCEL=False),
+    "M5_mom_fut": dict(_M, prot_src="bnf"),
+    "M6_mom_L01": dict(_M, OFFS=(0, 1)),
+    "M7_antimom": dict(_M, MOM_C=-3.0),
+    "M8_nomom_front": dict(_M, MOM_MS=0.0, MOM_C=0.0, MOM_CANCEL=False, qf=0.0),
 }
 A_ED = [0.5, 100, 1000, 1e8]
 INF = float("inf")
@@ -89,10 +103,11 @@ def btc_signals(bT, bP, w, W, thr, start, stop):
 
 
 class Prep:
-    def __init__(self, win: Win, dep: DepthDay, bT, bP):
+    def __init__(self, win: Win, dep: DepthDay, bT, bP, extra=None):
         self.win, self.w = win, win.w
         self.dep = {X: dep.by.get((win.w, X)) for X in "UD"}
         self.bT, self.bP = bT, bP
+        self.extra = extra or []                     # [(T, P)] доп. биржи для защиты (Bybit, Coinbase)
 
 
 def events_for(P: Prep, prm):
@@ -107,8 +122,10 @@ def events_for(P: Prep, prm):
         if x is not None:
             parts.append((x[0], k, None))
     if prm["prot"] != "none":
-        st, ss = btc_signals(P.bT, P.bP, w, prm["SIG_W"], prm["SIG_USD"], t0, t1)
-        parts.append((st + prm["CANCEL_MS"], 4, ss))
+        srcs = [(P.bT, P.bP)] + (P.extra if prm["prot_src"] == "all" else [])
+        for xT, xP in srcs:
+            st, ss = btc_signals(xT, xP, w, prm["SIG_W"], prm["SIG_USD"], t0, t1)
+            parts.append((st + prm["CANCEL_MS"], 4, ss))
     T, K, I, S = [], [], [], []
     for t, k, s in parts:
         T.append(t)
@@ -242,6 +259,19 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
                         cnt["c_far"] += 1
                     else:
                         live.append(o)
+                if prm["MOM_MS"] > 0:
+                    j = win.rcv_idx(t - prm["MOM_MS"])
+                    b0, a0 = (win.r[X][0][j], win.r[X][1][j]) if j >= 0 else (np.nan, np.nan)
+                    m_now = (bidX + askX) / 2 if np.isfinite(askX) else np.nan
+                    m_then = (b0 + a0) / 2 if np.isfinite(b0) and np.isfinite(a0) else np.nan
+                    d = 100 * (m_now - m_then) if np.isfinite(m_now) and np.isfinite(m_then) else np.nan
+                    ok = np.isfinite(d) and (d >= prm["MOM_C"] if prm["MOM_C"] >= 0 else d <= prm["MOM_C"])
+                    if not ok:
+                        if prm["MOM_CANCEL"]:
+                            for o in live:
+                                o["dead"] = t + PLACE_MS
+                                cnt["c_far"] += 1
+                        continue
                 if t < block[X]:
                     continue
                 pend = sum(o["rem"] for o in live)
@@ -308,6 +338,14 @@ def main():
         b = b.sort_values("T", kind="stable")
         bT, bP = b["T"].values.astype(float), b.price.values.astype(float)
         del b
+        extra = []
+        for st, tc in (("by_trade", "T"), ("cb_ticker", "t_ms")):
+            try:
+                x = read(root, st, [tc, "price"]).dropna().sort_values(tc, kind="stable")
+                if len(x):
+                    extra.append((x[tc].values.astype(float), x.price.values.astype(float)))
+            except Exception as ex:
+                print(f"{day}: {st} не прочитан: {ex!r}", flush=True)
         dep, tr = DepthDay(root), Trades(root)
         wrows, agg, bad = [], {}, []
         ws = [w for w in sorted(winners) if w in pm.by_w]
@@ -318,7 +356,7 @@ def main():
                 win = Win(w, pm, tr, {})
                 if len(win.rt) < 10:
                     continue
-                P = Prep(win, dep, bT, bP)
+                P = Prep(win, dep, bT, bP, extra)
                 won = {"U": 1.0 if winners[w] == "Up" else 0.0, "D": 1.0 if winners[w] == "Down" else 0.0}
                 for v in vars_:
                     wrows.append(run_window(P, prms[v], won, day, v, agg))
