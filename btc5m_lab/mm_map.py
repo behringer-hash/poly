@@ -44,7 +44,8 @@ REBATE = 0.2 * 0.07
 BASE = dict(OFFS=(0, 1, 2, 3), SIZE=10.0, LIMIT=60.0, MAXW=5000.0, START_S=5.0, STOP_S=15.0, prot="asym", SIG_USD=4.0,
             SIG_W=300.0, CANCEL_MS=175.0, COOLDOWN_MS=1000.0, queue="prop", alone=True, qf=1.0,
             MOM_MS=0.0, MOM_C=0.0, MOM_CANCEL=False, prot_src="bnf",
-            SIG=False, SIG_TH=3.0, SIG_KEEP=1.0, LIFE_MS=1500.0, LAT_MS=150.0, IMPROVE=False)
+            SIG=False, SIG_TH=3.0, SIG_KEEP=1.0, LIFE_MS=1500.0, LAT_MS=150.0, IMPROVE=False,
+            MODEL_FILE=None, FRESH=0.0, PX_MIN=PX_LO)
 # M*: как торгует x-MoneyForWhiskas (claude/wallet_moneyforwhiskas_1029.md, раздел 8): заявка только по лучшему bid и
 # только на токен, чей mid вырос >= MOM_C ц за MOM_MS (по книге сборщика); снятие по ходу BTC против на любой из бирж
 # (фьючерс Binance, Bybit, Coinbase); позицию не выравниваем (LIMIT большой).
@@ -52,6 +53,8 @@ _M = dict(OFFS=(0,), MOM_MS=10000.0, MOM_C=3.0, MOM_CANCEL=True, prot_src="all",
 # S*: мейкер по сигналу (sig_model, прогноз хода mid за 3 с): заявка только на постановку по лучшему bid токена, когда
 # прогноз его хода >= SIG_TH ц (на момент t − LAT_MS), живёт LIFE_MS; снимается, если прогноз < SIG_KEEP, и по ходу
 # BTC против на любой из трёх бирж; IMPROVE — на 1 ц выше лучшего bid при спреде >= 2 ц (первые на новом уровне).
+MODEL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "sig3s_v1.npz")
+MODEL_V2 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "sig3s_v2.npz")
 _S = dict(SIG=True, OFFS=(0,), alone=False, prot="asym", prot_src="all", SIG_USD=3.0, LIMIT=300.0)
 VARIANTS = {
     "A0": {},                                             # основное правило
@@ -88,6 +91,12 @@ VARIANTS = {
     "S7_th3_noprot": dict(_S, prot="none"),
     "S8_th3_lat300": dict(_S, LAT_MS=300.0),
     "S9_th5_imp": dict(_S, SIG_TH=5.0, IMPROVE=True),
+    # проверка вперёд (claude/strategy_4_signal_maker.md, раздел 3; зафиксировано 29.10 до новых данных):
+    # F0 — правило-кандидат на модели v1: прогноз >= 5 ц И свежий ход BTC >= $2 за 0,3 с в пользу токена, +1 ц, 0,10–0,95
+    "F0_v1": dict(_S, SIG_TH=5.0, IMPROVE=True, FRESH=2.0, PX_MIN=0.10),
+    "F3_v1_nofresh": dict(_S, SIG_TH=5.0, IMPROVE=True, PX_MIN=0.10),
+    "F1_v2": dict(_S, SIG_TH=5.0, IMPROVE=True, FRESH=2.0, PX_MIN=0.10, MODEL_FILE=MODEL_V2),
+    "F2_v2_nofresh": dict(_S, SIG_TH=5.0, IMPROVE=True, PX_MIN=0.10, MODEL_FILE=MODEL_V2),
 }
 A_ED = [0.5, 100, 1000, 1e8]
 INF = float("inf")
@@ -95,7 +104,6 @@ T_ED = [0, 30, 60, 120, 180, 240, 270]
 P_ED = [0.1, 0.25, 0.4, 0.6, 0.75, 0.9]
 B_ED = [-10, -3, 3, 10]
 SC_ED = [2, 3, 4, 6, 8, 12]
-MODEL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "sig3s_v1.npz")
 
 
 def bucket(x, edges):
@@ -301,7 +309,10 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
                 if prm["SIG"]:
                     if P.sig is None:
                         continue
-                    sT, sP, sUp, sDn = P.sig
+                    sg_ = P.sig.get(prm["MODEL_FILE"])
+                    if sg_ is None:
+                        continue
+                    sT, sP, sUp, sDn = sg_
                     j = int(np.searchsorted(sT, t - prm["LAT_MS"], side="right") - 1)
                     if j < 0 or not np.isfinite(sP[j]):
                         continue
@@ -313,11 +324,15 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
                         continue
                     if sx < prm["SIG_TH"] or live or t < block[X]:
                         continue
+                    if prm["FRESH"] > 0:
+                        fr_ = sUp[j] if X == "U" else sDn[j]
+                        if not (np.isfinite(fr_) and fr_ >= prm["FRESH"]):
+                            continue
                     q = bidX
                     if prm["IMPROVE"] and np.isfinite(askX) and askX - bidX >= 0.02 - 1e-9:
                         q = round(bidX + 0.01, 2)
                     q = round(q, 2)
-                    if not (PX_LO <= q <= PX_HI) or (np.isfinite(askX) and q > askX - 0.01 + 1e-9):
+                    if not (max(PX_LO, prm["PX_MIN"]) <= q <= PX_HI) or (np.isfinite(askX) and q > askX - 0.01 + 1e-9):
                         continue
                     allow = min(LIMIT - (qty[X] - qty[Y]), MAXW - qty[X])
                     if allow < SIZE - 1e-9:
@@ -413,8 +428,14 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     vars_ = [v for v in a.variants.split(",") if v in VARIANTS]
     prms = {v: {**BASE, **VARIANTS[v]} for v in vars_}
-    use_sig = any(p["SIG"] for p in prms.values())
-    trees = sm.Trees(a.model) if use_sig else None
+    for v in list(vars_):
+        if prms[v]["SIG"]:
+            prms[v]["MODEL_FILE"] = prms[v]["MODEL_FILE"] or a.model
+            if not os.path.exists(prms[v]["MODEL_FILE"]):
+                print(f"нет файла модели {prms[v]['MODEL_FILE']} — вариант {v} пропущен", flush=True)
+                vars_.remove(v)
+    use_sig = any(prms[v]["SIG"] for v in vars_)
+    trees = {f: sm.Trees(f) for f in {prms[v]["MODEL_FILE"] for v in vars_ if prms[v]["SIG"]}}
     for root in a.roots:
         t_day = time.time()
         day = os.path.basename(os.path.normpath(root))
@@ -455,7 +476,7 @@ def main():
                 win = Win(w, pm, tr, {})
                 if len(win.rt) < 10:
                     continue
-                sig = window_signal(win, ptb[w], btc, trees) if use_sig and w in ptb else None
+                sig = {f: window_signal(win, ptb[w], btc, tr_) for f, tr_ in trees.items()} if use_sig and w in ptb else {}
                 P = Prep(win, dep, bT, bP, extra, sig)
                 won = {"U": 1.0 if winners[w] == "Up" else 0.0, "D": 1.0 if winners[w] == "Down" else 0.0}
                 for v in vars_:
