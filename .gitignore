@@ -12,6 +12,9 @@ live_config_*.json
 !live_config.example.json
 STOP
 probe_*.json
+config_*_live.json
+data_*/
+logs/
 
 # готовые архивы для скачивания
 dist/

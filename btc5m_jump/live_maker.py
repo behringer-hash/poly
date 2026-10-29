@@ -340,8 +340,23 @@ class MakerTrader(LiveTrader):
                 self._final(e, dict(t_cancel=clock.now(), cancel_ms=None, cancel_status="not_placed", size_matched=0.0,
                                     order_status="", err=r["err"]))
             return
-        if clock.now() >= e["t_signal"] + float(self.m("maker_life_sec")):
-            self._expire(e)        # ответ пришёл позже срока жизни - снимаем сразу
+        if e.get("cancel_asap") or clock.now() >= e["t_signal"] + float(self.m("maker_life_sec")):
+            self._expire(e)        # просили снять раньше / ответ пришёл позже срока жизни - снимаем сразу
+
+    def cancel_early(self, sid: int, why: str = "") -> bool:
+        """Снять заявку раньше срока жизни (стратегия 4: прогноз упал, рынок ушёл, ход BTC против).
+        Если ответа на постановку ещё нет - снимем сразу, как только он придёт. True - снятие запрошено."""
+        e = self.open.get(sid)
+        if e is None or e.get("expired") or e.get("status") == "failed":
+            return False
+        if e.get("early"):
+            return False
+        e["early"] = why or "досрочно"
+        if e["status"] == "sending":
+            e["cancel_asap"] = True
+            return True
+        self._expire(e)
+        return True
 
     def _expire(self, e):
         if e["expired"] or e["status"] == "sending":
@@ -486,6 +501,8 @@ class MakerTrader(LiveTrader):
                 what += f" (снятие: {r['cancel_status'][:40]}"
                 what += f", {r['cancel_ms']:.0f} мс)" if r["cancel_ms"] else ")"
             what += f" | по сделкам рынка: {sh:.0f} шт{first}"
+        if e.get("early"):
+            what += f" | снята досрочно: {e['early']}"
         emit(f"{ts(clock.now())} ИТОГ   #{e['sid']} [{MODE_NAME.get(e.get('mode'), e.get('mode'))}] {e['outcome']} @ {e['q']:.2f}: {what}")
 
     # ------------------------------------------------------------------ теневое исполнение по сделкам рынка
