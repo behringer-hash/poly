@@ -97,6 +97,7 @@ VARIANTS = {
     "F3_v1_nofresh": dict(_S, SIG_TH=5.0, IMPROVE=True, PX_MIN=0.10),
     "F1_v2": dict(_S, SIG_TH=5.0, IMPROVE=True, FRESH=2.0, PX_MIN=0.10, MODEL_FILE=MODEL_V2),
     "F2_v2_nofresh": dict(_S, SIG_TH=5.0, IMPROVE=True, PX_MIN=0.10, MODEL_FILE=MODEL_V2),
+    "F4_v2_th3": dict(_S, SIG_TH=3.0, IMPROVE=True, PX_MIN=0.10, MODEL_FILE=MODEL_V2),   # добавлен 29.10 после P38
 }
 A_ED = [0.5, 100, 1000, 1e8]
 INF = float("inf")

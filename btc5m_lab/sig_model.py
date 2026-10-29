@@ -24,7 +24,8 @@ def phi(x):
     x = np.asarray(x, dtype=float)
     out = np.full(x.shape, np.nan)
     ok = np.isfinite(x)
-    out[ok] = 0.5 * (1.0 + np.vectorize(math.erf)(x[ok] / math.sqrt(2.0)))
+    if ok.any():
+        out[ok] = 0.5 * (1.0 + np.vectorize(math.erf, otypes=[float])(x[ok] / math.sqrt(2.0)))
     return out
 
 
