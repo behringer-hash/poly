@@ -45,7 +45,15 @@ BASE = dict(OFFS=(0, 1, 2, 3), SIZE=10.0, LIMIT=60.0, MAXW=5000.0, START_S=5.0, 
             SIG_W=300.0, CANCEL_MS=175.0, COOLDOWN_MS=1000.0, queue="prop", alone=True, qf=1.0,
             MOM_MS=0.0, MOM_C=0.0, MOM_CANCEL=False, prot_src="bnf",
             SIG=False, SIG_TH=3.0, SIG_KEEP=1.0, LIFE_MS=1500.0, LAT_MS=150.0, IMPROVE=False,
-            MODEL_FILE=None, FRESH=0.0, PX_MIN=PX_LO)
+            MODEL_FILE=None, FRESH=0.0, PX_MIN=PX_LO, ARR=None, PLACE_MS=PLACE_MS)
+# ARR: данные доходят до бота с задержкой (а не мгновенно, как по времени биржи / сервера). Медианы задержек по месту
+# (latency_probe); время прихода = время получения сборщиком + (медиана места - медиана сборщика за день), форма хвоста -
+# как у сборщика. Признаки на точке сетки g - только по тому, что пришло к g + LAT_MS; отмена по ходу BTC действует
+# через PLACE_MS после прихода сделки (а не через CANCEL_MS после времени биржи).
+PROFILES = {
+    "IE": dict(bnf=121.9, by=114.0, cb=70.6, book=25.8),      # Ирландия, замер 29.10 (заявка туда-обратно 31 мс)
+    "TYO": dict(bnf=26.6, by=53.6, cb=101.3, book=132.2),     # Токио, замер 26.10 (заявка туда-обратно 246 мс)
+}
 # M*: как торгует x-MoneyForWhiskas (claude/wallet_moneyforwhiskas_1029.md, раздел 8): заявка только по лучшему bid и
 # только на токен, чей mid вырос >= MOM_C ц за MOM_MS (по книге сборщика); снятие по ходу BTC против на любой из бирж
 # (фьючерс Binance, Bybit, Coinbase); позицию не выравниваем (LIMIT большой).
@@ -98,7 +106,26 @@ VARIANTS = {
     "F1_v2": dict(_S, SIG_TH=5.0, IMPROVE=True, FRESH=2.0, PX_MIN=0.10, MODEL_FILE=MODEL_V2),
     "F2_v2_nofresh": dict(_S, SIG_TH=5.0, IMPROVE=True, PX_MIN=0.10, MODEL_FILE=MODEL_V2),
     "F4_v2_th3": dict(_S, SIG_TH=3.0, IMPROVE=True, PX_MIN=0.10, MODEL_FILE=MODEL_V2),   # добавлен 29.10 после P38
+    # R*: правило F0 с реальными задержками прихода данных (P39): Ирландия / Токио, время решения, путь заявки
+    "R0_ie": dict(_S, SIG_TH=5.0, IMPROVE=True, FRESH=2.0, PX_MIN=0.10, ARR="IE"),
+    "R1_ie_lat200": dict(_S, SIG_TH=5.0, IMPROVE=True, FRESH=2.0, PX_MIN=0.10, ARR="IE", LAT_MS=200.0),
+    "R2_ie_lat250": dict(_S, SIG_TH=5.0, IMPROVE=True, FRESH=2.0, PX_MIN=0.10, ARR="IE", LAT_MS=250.0),
+    "R3_ie_place100": dict(_S, SIG_TH=5.0, IMPROVE=True, FRESH=2.0, PX_MIN=0.10, ARR="IE", PLACE_MS=100.0),
+    "R4_tyo": dict(_S, SIG_TH=5.0, IMPROVE=True, FRESH=2.0, PX_MIN=0.10, ARR="TYO", PLACE_MS=150.0),
+    "R5_ie_nofresh": dict(_S, SIG_TH=5.0, IMPROVE=True, PX_MIN=0.10, ARR="IE"),
 }
+
+
+def sig_key(prm: dict):
+    """Ключ прогноза: модель; с задержками прихода - ещё место и время решения (признаки от них зависят)."""
+    return (prm["MODEL_FILE"], prm["ARR"], prm["LAT_MS"]) if prm["ARR"] else prm["MODEL_FILE"]
+
+
+def delayed(T, P, A, lat):
+    """Ряд «как его видит бот»: сделка попадает в ячейку не раньше прихода - lat (время = max(T, A - lat))."""
+    Te = np.maximum(T, A - lat)
+    o = np.argsort(Te, kind="stable")
+    return Te[o], P[o]
 A_ED = [0.5, 100, 1000, 1e8]
 INF = float("inf")
 T_ED = [0, 30, 60, 120, 180, 240, 270]
@@ -130,24 +157,31 @@ def btc_signals(bT, bP, w, W, thr, start, stop):
 
 
 class Prep:
-    def __init__(self, win: Win, dep: DepthDay, bT, bP, extra=None, sig=None):
+    def __init__(self, win: Win, dep: DepthDay, bT, bP, extra=None, sig=None, arr=None):
         self.win, self.w = win, win.w
+        self.arr = arr or {}                         # {место: [время прихода для bT, для extra...]}
         self.dep = {X: dep.by.get((win.w, X)) for X in "UD"}
         self.bT, self.bP = bT, bP
         self.extra = extra or []                     # [(T, P)] доп. биржи для защиты (Bybit, Coinbase)
         self.sig = sig                               # (время сетки, мс; прогноз хода mid Up за 3 с, ц; свежий ход BTC вверх; вниз)
 
 
-def window_signal(win: Win, K: float, btc: dict, trees) -> tuple | None:
-    """Прогноз сигнала на сетке 100 мс по данным окна (книга сервера, сделки, BTC по времени биржи)."""
+def window_signal(win: Win, K: float, btc: dict, trees, book_arr=None, lat: float = 150.0) -> tuple | None:
+    """Прогноз сигнала на сетке 100 мс по данным окна (книга сервера, сделки, BTC по времени биржи).
+    book_arr - время прихода строк книги к боту (тогда книга в ячейке - только пришедшая к g + lat)."""
     bu, au, bzu = win.s["U"]
     azu = win.s["D"][2]
+    st = win.st
+    if book_arr is not None:
+        ste = np.maximum(st, book_arr - lat)
+        o = np.argsort(ste, kind="stable")
+        st, bu, au, bzu, azu = ste[o], bu[o], au[o], bzu[o], azu[o]
     tr = win.tr
     trades = None
     if tr is not None:
         sg = np.where((tr[1] == "U") == (tr[2] == "B"), 1.0, -1.0) * tr[4]
         trades = (tr[0], sg)
-    D = sm.window_features(win.w, K, (win.st, bu, au, bzu, azu), trades, btc)
+    D = sm.window_features(win.w, K, (st, bu, au, bzu, azu), trades, btc)
     if D is None:
         return None
     p = trees.predict(D[sm.FEATS].values)
@@ -169,9 +203,17 @@ def events_for(P: Prep, prm):
             parts.append((x[0], k, None))
     if prm["prot"] != "none":
         srcs = [(P.bT, P.bP)] + (P.extra if prm["prot_src"] == "all" else [])
-        for xT, xP in srcs:
+        arrs = P.arr.get(prm["ARR"]) if prm["ARR"] else None
+        for n, (xT, xP) in enumerate(srcs):
             st, ss = btc_signals(xT, xP, w, prm["SIG_W"], prm["SIG_USD"], t0, t1)
-            parts.append((st + prm["CANCEL_MS"], 4, ss))
+            if arrs is not None and len(st):
+                xA = arrs[n]
+                ia = np.minimum(np.searchsorted(xT, st, side="left"), len(xA) - 1)
+                tc = np.maximum(xA[ia], st) + prm["PLACE_MS"]
+                o = np.argsort(tc, kind="stable")
+                parts.append((tc[o], 4, ss[o]))
+            else:
+                parts.append((st + prm["CANCEL_MS"], 4, ss))
     T, K, I, S = [], [], [], []
     for t, k, s in parts:
         T.append(t)
@@ -187,6 +229,7 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
     win, w = P.win, P.w
     OFFS, SIZE, LIMIT, MAXW = prm["OFFS"], prm["SIZE"], prm["LIMIT"], prm["MAXW"]
     maxoff = max(OFFS)
+    PL = prm["PLACE_MS"]                              # заявка/отмена действует на сервере через PL мс
     orders = {"U": [], "D": []}
     qty, cost = {"U": 0.0, "D": 0.0}, {"U": 0.0, "D": 0.0}
     block = {"U": -INF, "D": -INF}
@@ -276,7 +319,7 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
                     if not o.get("cx") and o["dead"] > t and o["rem"] > 1e-9:
                         o["dead"], o["cx"] = t, True
                         cnt["c_sig"] += 1
-                block[X] = max(block[X], t - PLACE_MS + prm["COOLDOWN_MS"])
+                block[X] = max(block[X], t - PL + prm["COOLDOWN_MS"])
         else:                                         # пересчёт заявок по книге сборщика
             for X in "UD":
                 orders[X] = [o for o in orders[X] if o["dead"] > t and o["rem"] > 1e-9]
@@ -284,7 +327,7 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
                 for X in "UD":
                     for o in orders[X]:
                         if not o.get("cx"):
-                            o["dead"], o["cx"] = min(o["dead"], t + PLACE_MS), True
+                            o["dead"], o["cx"] = min(o["dead"], t + PL), True
                             cnt["c_stop"] += 1
                 continue
             i = win.rcv_idx(t)
@@ -300,17 +343,17 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
                     if o["dead"] <= t or o.get("cx"):
                         continue
                     if prm["alone"] and o["q"] > bidX + 1e-9:
-                        o["dead"], o["cx"] = min(o["dead"], t + PLACE_MS), True
+                        o["dead"], o["cx"] = min(o["dead"], t + PL), True
                         cnt["c_alone"] += 1
                     elif o["q"] < bidX - (maxoff + 2) / 100 - 1e-9:
-                        o["dead"], o["cx"] = min(o["dead"], t + PLACE_MS), True
+                        o["dead"], o["cx"] = min(o["dead"], t + PL), True
                         cnt["c_far"] += 1
                     else:
                         live.append(o)
                 if prm["SIG"]:
                     if P.sig is None:
                         continue
-                    sg_ = P.sig.get(prm["MODEL_FILE"])
+                    sg_ = P.sig.get(sig_key(prm))
                     if sg_ is None:
                         continue
                     sT, sP, sUp, sDn = sg_
@@ -320,7 +363,7 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
                     sx = sP[j] if X == "U" else -sP[j]
                     if sx < prm["SIG_KEEP"]:
                         for o in live:
-                            o["dead"], o["cx"] = min(o["dead"], t + PLACE_MS), True
+                            o["dead"], o["cx"] = min(o["dead"], t + PL), True
                             cnt["c_drop"] += 1
                         continue
                     if sx < prm["SIG_TH"] or live or t < block[X]:
@@ -338,7 +381,7 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
                     allow = min(LIMIT - (qty[X] - qty[Y]), MAXW - qty[X])
                     if allow < SIZE - 1e-9:
                         continue
-                    ta = t + PLACE_MS
+                    ta = t + PL
                     sb, sa, ssz = win.srv_state(X, ta)
                     if np.isfinite(sa) and sa <= q + 1e-9:
                         cnt["cross"] += 1
@@ -373,7 +416,7 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
                     if not ok:
                         if prm["MOM_CANCEL"]:
                             for o in live:
-                                o["dead"], o["cx"] = min(o["dead"], t + PLACE_MS), True
+                                o["dead"], o["cx"] = min(o["dead"], t + PL), True
                                 cnt["c_far"] += 1
                         continue
                 if t < block[X]:
@@ -389,7 +432,7 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
                         continue
                     if np.isfinite(askX) and q > askX - 0.01 + 1e-9:
                         continue
-                    ta = t + PLACE_MS
+                    ta = t + PL
                     sb, sa, ssz = win.srv_state(X, ta)
                     if np.isfinite(sa) and sa <= q + 1e-9:
                         cnt["cross"] += 1
@@ -445,27 +488,51 @@ def main():
             print(f"{day}: нет pm_top", flush=True)
             continue
         winners, ptb = winners_ptb(root)
+        book_med = float(np.nanmedian(pm_top.d.values.astype(float))) if "d" in pm_top else np.nan
         pm = PM(pm_top)
         del pm_top
-        b = read(root, "bnf_agg", ["T", "price"]).dropna()
+        b = read(root, "bnf_agg", ["T", "price", "recv_ms"]).dropna(subset=["T", "price"])
         b = b.sort_values("T", kind="stable")
         bT, bP = b["T"].values.astype(float), b.price.values.astype(float)
+        rcv = {"bnf": b.recv_ms.values.astype(float)}
         del b
-        extra, ext = [], {}
+        extra, ext, ext_n = [], {}, []
         for nm, st, tc in (("by", "by_trade", "T"), ("cb", "cb_ticker", "t_ms")):
             try:
-                x = read(root, st, [tc, "price"]).dropna().sort_values(tc, kind="stable")
+                x = read(root, st, [tc, "price", "recv_ms"]).dropna(subset=[tc, "price"]).sort_values(tc, kind="stable")
                 if len(x):
                     ext[nm] = (x[tc].values.astype(float), x.price.values.astype(float))
+                    rcv[nm] = x.recv_ms.values.astype(float)
                     extra.append(ext[nm])
+                    ext_n.append(nm)
             except Exception as ex:
                 print(f"{day}: {st} не прочитан: {ex!r}", flush=True)
         btc = {"bnf": (bT, bP), **ext}
+        # задержки прихода (варианты ARR): время прихода к боту по каждому месту
+        arr, btc_d, book_shift = {}, {}, {}
+        for prof in sorted({prms[v]["ARR"] for v in vars_ if prms[v]["ARR"]}):
+            tgt = PROFILES[prof]
+            arr[prof], msg = [], []
+            for nm in ["bnf"] + ext_n:
+                T_, R_ = btc[nm][0], rcv[nm]
+                lag = R_ - T_
+                med = float(np.nanmedian(lag))
+                A_ = np.where(np.isfinite(R_), R_ + (tgt[nm] - med), T_ + tgt[nm])
+                arr[prof].append(A_)
+                msg.append(f"{nm} сборщик p50 {med:.0f} мс -> {tgt[nm]:.0f}, позже 150 мс: {np.mean(A_ - T_ > 150):.1%}")
+            book_shift[prof] = tgt["book"] - book_med if np.isfinite(book_med) else 0.0
+            msg.append(f"книга сборщик p50 {book_med:.0f} мс -> {tgt['book']:.0f}")
+            print(f"{day}: задержки {prof}: " + "; ".join(msg), flush=True)
+            for lat in sorted({prms[v]["LAT_MS"] for v in vars_ if prms[v]["ARR"] == prof}):
+                d_ = {nm: delayed(btc[nm][0], btc[nm][1], A_, lat) for nm, A_ in zip(["bnf"] + ext_n, arr[prof])}
+                btc_d[(prof, lat)] = d_
         if use_sig:
             r = read(root, "rtds", ["feed", "ts_ms", "value"])
             r = r[r.feed == "cl"].dropna().sort_values("ts_ms", kind="stable") if not r.empty else r
             if len(r):
                 btc["cl"] = (r.ts_ms.values.astype(float), r.value.values.astype(float))
+                for d_ in btc_d.values():
+                    d_["cl"] = btc["cl"]
             del r
         dep, tr = DepthDay(root), Trades(root)
         wrows, agg, bad = [], {}, []
@@ -477,8 +544,19 @@ def main():
                 win = Win(w, pm, tr, {})
                 if len(win.rt) < 10:
                     continue
-                sig = {f: window_signal(win, ptb[w], btc, tr_) for f, tr_ in trees.items()} if use_sig and w in ptb else {}
-                P = Prep(win, dep, bT, bP, extra, sig)
+                sig = {}
+                if use_sig and w in ptb:
+                    for v in vars_:
+                        pv = prms[v]
+                        if not pv["SIG"] or sig_key(pv) in sig:
+                            continue
+                        if pv["ARR"]:
+                            rv = pm.by_w[w]["srv"]["rv"] + book_shift[pv["ARR"]]
+                            sig[sig_key(pv)] = window_signal(win, ptb[w], btc_d[(pv["ARR"], pv["LAT_MS"])],
+                                                             trees[pv["MODEL_FILE"]], book_arr=rv, lat=pv["LAT_MS"])
+                        else:
+                            sig[sig_key(pv)] = window_signal(win, ptb[w], btc, trees[pv["MODEL_FILE"]])
+                P = Prep(win, dep, bT, bP, extra, sig, arr)
                 won = {"U": 1.0 if winners[w] == "Up" else 0.0, "D": 1.0 if winners[w] == "Down" else 0.0}
                 for v in vars_:
                     wrows.append(run_window(P, prms[v], won, day, v, agg))

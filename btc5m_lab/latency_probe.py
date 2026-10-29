@@ -329,7 +329,13 @@ async def main_async(minutes):
           f"на {mch['cpus']} ядер; задержка самой программы p99 {mch['loop_lag_p99_ms']} мс, макс {mch['loop_lag_max_ms']} мс"
           + (" - ПРОЦЕССОР НЕ СПРАВЛЯЕТСЯ, задержки ниже завышены" if (mch['loop_lag_p99_ms'] or 0) > 50 else ""))
     st = rest.get("order_status", {})
-    if geo.get("blocked") is True or 403 in st:
+    # страны, где по документации Polymarket закрыт только сайт, а API разрешён (docs.polymarket.com/api-reference/geoblock)
+    api_ok = {"IE", "JP", "NL", "KR"}
+    if 403 in st:
+        verdict = "ЗАКРЫТА - сервер ордеров отвечает 403"
+    elif geo.get("blocked") is True and str(geo.get("country", "")).upper() in api_ok:
+        verdict = "разрешена через API (сайт для этой страны закрыт - это ожидаемо, как в Японии)"
+    elif geo.get("blocked") is True:
         verdict = "ЗАКРЫТА - этот регион не подходит"
     elif geo.get("blocked") is False and 401 in st:
         verdict = "разрешена"

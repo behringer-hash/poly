@@ -69,7 +69,7 @@ class PM:
     @staticmethod
     def _pack(g, key="srv"):
         return dict(t=g[key].values.astype(float), bid=g.bid.values, ask=g.ask.values,
-                    bsz=g.bid_sz.values, asz=g.ask_sz.values)
+                    bsz=g.bid_sz.values, asz=g.ask_sz.values, rv=g.recv_ms.values.astype(float))
 
     def state(self, w: int, t_ms: float, kind: str):
         """Последнее известное состояние верха книги Up к моменту t_ms: (bid, ask, bid_sz, ask_sz)."""
