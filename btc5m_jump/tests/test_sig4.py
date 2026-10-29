@@ -275,3 +275,19 @@ def test_maker_cancel_early_live_and_while_sending():
         await asyncio.sleep(0.6)
     asyncio.run(go2())
     assert cl2.canceled == ["O1"] and not t2.open
+
+
+def test_one_order_per_side_active_ignores_cancelled():
+    """'active': снятая заявка (ждёт подтверждения) не мешает новой на той же стороне; True - мешает до итога."""
+    for mode, expect in (("active", 2), (True, 1)):
+        cl = Client(matched="0")
+        t, win = trader("live", cl, maker_life_sec=5.0, one_order_per_side=mode, max_open_orders=4)
+
+        async def go():
+            t.on_signal(msig(sid=1))
+            await asyncio.sleep(0.15)
+            assert t.cancel_early(1, "тест")
+            t.on_signal(msig(sid=2))                   # сразу после снятия, итог первой ещё не пришёл
+            await asyncio.sleep(0.4)
+        asyncio.run(go())
+        assert t.mstats["signals"] - t.mstats["skipped"] == expect, mode

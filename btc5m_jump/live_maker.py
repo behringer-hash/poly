@@ -62,7 +62,8 @@ MAKER_DEFAULTS = {
     "gtd_expire_sec": 300,         # срок GTD-заявки от момента подписи; сервер требует не меньше 180 с (ответ
                                    # 'expiration is less than 180 seconds in the future'), меньше GTD_MIN_SEC не ставим
     "max_open_orders": 2,
-    "one_order_per_side": True,    # False - по каждому сигналу своя заявка, даже если прошлая на этой стороне ещё стоит
+    "one_order_per_side": True,    # False - по каждому сигналу своя заявка, даже если прошлая на этой стороне ещё стоит;
+                                   # "active" - не больше одной действующей; снятая (ждёт подтверждения) не мешает новой
     "max_consecutive_errors": 5,
     "shadow_match_sec": TAKER_CHECK_SEC,  # dry/sign: через сколько секунд после сигнала заявка по ask сводится с книгой
 }
@@ -197,8 +198,9 @@ class MakerTrader(LiveTrader):
         if -self.day_pnl >= c["max_loss_per_day"]:
             self.stopped_reason = f"дневной убыток {self.day_pnl:.2f}$ достиг лимита"
             return self.stopped_reason
-        if self.m("one_order_per_side") and any(o["slug"] == s["slug"] and o["outcome"] == s["outcome"]
-                                                for o in self.open.values()):
+        oops = self.m("one_order_per_side")
+        if oops and any(o["slug"] == s["slug"] and o["outcome"] == s["outcome"]
+                        and not (oops == "active" and o.get("expired")) for o in self.open.values()):
             return "заявка этой стороны ещё стоит"
         if len(self.open) >= int(self.m("max_open_orders")):
             return "много открытых заявок"
