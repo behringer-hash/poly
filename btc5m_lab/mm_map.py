@@ -34,6 +34,7 @@ from edge_source import winners_ptb
 from lead_lag import PM, read
 from mm_ladder import DepthDay, level_size
 from mm_sim import Win
+import sig_model as sm
 
 WINDOW = 300
 GRID_MS = 100.0
@@ -42,11 +43,16 @@ PX_LO, PX_HI = 0.05, 0.95
 REBATE = 0.2 * 0.07
 BASE = dict(OFFS=(0, 1, 2, 3), SIZE=10.0, LIMIT=60.0, MAXW=5000.0, START_S=5.0, STOP_S=15.0, prot="asym", SIG_USD=4.0,
             SIG_W=300.0, CANCEL_MS=175.0, COOLDOWN_MS=1000.0, queue="prop", alone=True, qf=1.0,
-            MOM_MS=0.0, MOM_C=0.0, MOM_CANCEL=False, prot_src="bnf")
+            MOM_MS=0.0, MOM_C=0.0, MOM_CANCEL=False, prot_src="bnf",
+            SIG=False, SIG_TH=3.0, SIG_KEEP=1.0, LIFE_MS=1500.0, LAT_MS=150.0, IMPROVE=False)
 # M*: как торгует x-MoneyForWhiskas (claude/wallet_moneyforwhiskas_1029.md, раздел 8): заявка только по лучшему bid и
 # только на токен, чей mid вырос >= MOM_C ц за MOM_MS (по книге сборщика); снятие по ходу BTC против на любой из бирж
 # (фьючерс Binance, Bybit, Coinbase); позицию не выравниваем (LIMIT большой).
 _M = dict(OFFS=(0,), MOM_MS=10000.0, MOM_C=3.0, MOM_CANCEL=True, prot_src="all", SIG_USD=3.0, LIMIT=300.0)
+# S*: мейкер по сигналу (sig_model, прогноз хода mid за 3 с): заявка только на постановку по лучшему bid токена, когда
+# прогноз его хода >= SIG_TH ц (на момент t − LAT_MS), живёт LIFE_MS; снимается, если прогноз < SIG_KEEP, и по ходу
+# BTC против на любой из трёх бирж; IMPROVE — на 1 ц выше лучшего bid при спреде >= 2 ц (первые на новом уровне).
+_S = dict(SIG=True, OFFS=(0,), alone=False, prot="asym", prot_src="all", SIG_USD=3.0, LIMIT=300.0)
 VARIANTS = {
     "A0": {},                                             # основное правило
     "A1_noprot": dict(prot="none"),
@@ -72,12 +78,24 @@ VARIANTS = {
     "M6_mom_L01": dict(_M, OFFS=(0, 1)),
     "M7_antimom": dict(_M, MOM_C=-3.0),
     "M8_nomom_front": dict(_M, MOM_MS=0.0, MOM_C=0.0, MOM_CANCEL=False, qf=0.0),
+    "S0_th3": dict(_S),
+    "S1_th2": dict(_S, SIG_TH=2.0),
+    "S2_th5": dict(_S, SIG_TH=5.0),
+    "S3_th3_imp": dict(_S, IMPROVE=True),
+    "S4_th3_front": dict(_S, qf=0.0),
+    "S5_th3_life05": dict(_S, LIFE_MS=500.0),
+    "S6_th3_life5": dict(_S, LIFE_MS=5000.0),
+    "S7_th3_noprot": dict(_S, prot="none"),
+    "S8_th3_lat300": dict(_S, LAT_MS=300.0),
+    "S9_th5_imp": dict(_S, SIG_TH=5.0, IMPROVE=True),
 }
 A_ED = [0.5, 100, 1000, 1e8]
 INF = float("inf")
 T_ED = [0, 30, 60, 120, 180, 240, 270]
 P_ED = [0.1, 0.25, 0.4, 0.6, 0.75, 0.9]
 B_ED = [-10, -3, 3, 10]
+SC_ED = [2, 3, 4, 6, 8, 12]
+MODEL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "sig3s_v1.npz")
 
 
 def bucket(x, edges):
@@ -103,11 +121,30 @@ def btc_signals(bT, bP, w, W, thr, start, stop):
 
 
 class Prep:
-    def __init__(self, win: Win, dep: DepthDay, bT, bP, extra=None):
+    def __init__(self, win: Win, dep: DepthDay, bT, bP, extra=None, sig=None):
         self.win, self.w = win, win.w
         self.dep = {X: dep.by.get((win.w, X)) for X in "UD"}
         self.bT, self.bP = bT, bP
         self.extra = extra or []                     # [(T, P)] доп. биржи для защиты (Bybit, Coinbase)
+        self.sig = sig                               # (время сетки, мс; прогноз хода mid Up за 3 с, ц; свежий ход BTC вверх; вниз)
+
+
+def window_signal(win: Win, K: float, btc: dict, trees) -> tuple | None:
+    """Прогноз сигнала на сетке 100 мс по данным окна (книга сервера, сделки, BTC по времени биржи)."""
+    bu, au, bzu = win.s["U"]
+    azu = win.s["D"][2]
+    tr = win.tr
+    trades = None
+    if tr is not None:
+        sg = np.where((tr[1] == "U") == (tr[2] == "B"), 1.0, -1.0) * tr[4]
+        trades = (tr[0], sg)
+    D = sm.window_features(win.w, K, (win.st, bu, au, bzu, azu), trades, btc)
+    if D is None:
+        return None
+    p = trees.predict(D[sm.FEATS].values)
+    up = np.nanmax(np.vstack([D.dbnf03.values, D.dby03.values, D.dcb03.values]), axis=0)
+    dn = -np.nanmin(np.vstack([D.dbnf03.values, D.dby03.values, D.dcb03.values]), axis=0)
+    return (win.w + D.t.values) * 1000.0, p, up, dn
 
 
 def events_for(P: Prep, prm):
@@ -144,7 +181,7 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
     orders = {"U": [], "D": []}
     qty, cost = {"U": 0.0, "D": 0.0}, {"U": 0.0, "D": 0.0}
     block = {"U": -INF, "D": -INF}
-    cnt = dict(placed=0, c_sig=0, c_alone=0, c_far=0, c_stop=0, fills=0, cross=0)
+    cnt = dict(placed=0, c_sig=0, c_alone=0, c_far=0, c_stop=0, fills=0, cross=0, c_drop=0)
     reb = 0.0
     tr = win.tr
     bT, bP = P.bT, P.bP
@@ -167,8 +204,10 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
         cnt["fills"] += 1
         m5, m60 = win.mid(X, t + 5000), win.mid(X, t + 60000)
         mv = btc_move(t, 1 if X == "U" else -1)
+        sc = o.get("sc", np.nan)
         key = (var, bucket(t / 1000.0 - w, T_ED), o["k"], bucket(mv, B_ED) if np.isfinite(mv) else -1,
-               bucket(o["q"], P_ED), kind, bucket(o["A0"], A_ED))
+               bucket(o["q"], P_ED), kind, bucket(o["A0"], A_ED), bucket(sc, SC_ED) if np.isfinite(sc) else -1,
+               o.get("st", -1))
         a = agg.setdefault(key, [0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         a[0] += 1
         a[1] += f
@@ -225,8 +264,8 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
                 hit = ["U", "D"]
             for X in hit:
                 for o in orders[X]:
-                    if o["dead"] == INF and o["rem"] > 1e-9:
-                        o["dead"] = t
+                    if not o.get("cx") and o["dead"] > t and o["rem"] > 1e-9:
+                        o["dead"], o["cx"] = t, True
                         cnt["c_sig"] += 1
                 block[X] = max(block[X], t - PLACE_MS + prm["COOLDOWN_MS"])
         else:                                         # пересчёт заявок по книге сборщика
@@ -235,8 +274,8 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
             if t >= t_stop:
                 for X in "UD":
                     for o in orders[X]:
-                        if o["dead"] == INF:
-                            o["dead"] = t + PLACE_MS
+                        if not o.get("cx"):
+                            o["dead"], o["cx"] = min(o["dead"], t + PLACE_MS), True
                             cnt["c_stop"] += 1
                 continue
             i = win.rcv_idx(t)
@@ -249,16 +288,65 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
                     continue
                 live = []
                 for o in orders[X]:
-                    if o["dead"] != INF:
+                    if o["dead"] <= t or o.get("cx"):
                         continue
                     if prm["alone"] and o["q"] > bidX + 1e-9:
-                        o["dead"] = t + PLACE_MS
+                        o["dead"], o["cx"] = min(o["dead"], t + PLACE_MS), True
                         cnt["c_alone"] += 1
                     elif o["q"] < bidX - (maxoff + 2) / 100 - 1e-9:
-                        o["dead"] = t + PLACE_MS
+                        o["dead"], o["cx"] = min(o["dead"], t + PLACE_MS), True
                         cnt["c_far"] += 1
                     else:
                         live.append(o)
+                if prm["SIG"]:
+                    if P.sig is None:
+                        continue
+                    sT, sP, sUp, sDn = P.sig
+                    j = int(np.searchsorted(sT, t - prm["LAT_MS"], side="right") - 1)
+                    if j < 0 or not np.isfinite(sP[j]):
+                        continue
+                    sx = sP[j] if X == "U" else -sP[j]
+                    if sx < prm["SIG_KEEP"]:
+                        for o in live:
+                            o["dead"], o["cx"] = min(o["dead"], t + PLACE_MS), True
+                            cnt["c_drop"] += 1
+                        continue
+                    if sx < prm["SIG_TH"] or live or t < block[X]:
+                        continue
+                    q = bidX
+                    if prm["IMPROVE"] and np.isfinite(askX) and askX - bidX >= 0.02 - 1e-9:
+                        q = round(bidX + 0.01, 2)
+                    q = round(q, 2)
+                    if not (PX_LO <= q <= PX_HI) or (np.isfinite(askX) and q > askX - 0.01 + 1e-9):
+                        continue
+                    allow = min(LIMIT - (qty[X] - qty[Y]), MAXW - qty[X])
+                    if allow < SIZE - 1e-9:
+                        continue
+                    ta = t + PLACE_MS
+                    sb, sa, ssz = win.srv_state(X, ta)
+                    if np.isfinite(sa) and sa <= q + 1e-9:
+                        cnt["cross"] += 1
+                        continue
+                    if np.isfinite(sb) and abs(sb - q) < 1e-9:
+                        A = ssz if np.isfinite(ssz) else 1e9
+                    elif not np.isfinite(sb) or q > sb + 1e-9:
+                        A = 0.0
+                    else:
+                        A = np.nan
+                        x = P.dep[X]
+                        if x is not None:
+                            jj = int(np.searchsorted(x[0], ta, side="right") - 1)
+                            if jj >= 0:
+                                A = level_size(x[1][jj], x[2][jj], q)
+                        A = 1e9 if not np.isfinite(A) else A
+                    if prm["qf"] < 1:
+                        A = 0.0 if prm["qf"] <= 0 else (A * prm["qf"] if A < 1e8 else A)
+                    fresh = (sUp[j] if X == "U" else sDn[j])
+                    orders[X].append(dict(q=q, k=0, ta=ta, A=A, A0=A, rem=SIZE, dead=ta + prm["LIFE_MS"],
+                                          S_prev=A if A < 1e8 else np.nan, traded=0.0, sc=sx,
+                                          st=int(np.isfinite(fresh) and fresh >= 2.0)))
+                    cnt["placed"] += 1
+                    continue
                 if prm["MOM_MS"] > 0:
                     j = win.rcv_idx(t - prm["MOM_MS"])
                     b0, a0 = (win.r[X][0][j], win.r[X][1][j]) if j >= 0 else (np.nan, np.nan)
@@ -269,7 +357,7 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
                     if not ok:
                         if prm["MOM_CANCEL"]:
                             for o in live:
-                                o["dead"] = t + PLACE_MS
+                                o["dead"], o["cx"] = min(o["dead"], t + PLACE_MS), True
                                 cnt["c_far"] += 1
                         continue
                 if t < block[X]:
@@ -320,10 +408,13 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--variants", default=",".join(v for v in VARIANTS if v.startswith("A")))
     ap.add_argument("--max-windows", type=int, default=0)
+    ap.add_argument("--model", default=MODEL)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     vars_ = [v for v in a.variants.split(",") if v in VARIANTS]
     prms = {v: {**BASE, **VARIANTS[v]} for v in vars_}
+    use_sig = any(p["SIG"] for p in prms.values())
+    trees = sm.Trees(a.model) if use_sig else None
     for root in a.roots:
         t_day = time.time()
         day = os.path.basename(os.path.normpath(root))
@@ -331,21 +422,29 @@ def main():
         if pm_top.empty:
             print(f"{day}: нет pm_top", flush=True)
             continue
-        winners, _ = winners_ptb(root)
+        winners, ptb = winners_ptb(root)
         pm = PM(pm_top)
         del pm_top
         b = read(root, "bnf_agg", ["T", "price"]).dropna()
         b = b.sort_values("T", kind="stable")
         bT, bP = b["T"].values.astype(float), b.price.values.astype(float)
         del b
-        extra = []
-        for st, tc in (("by_trade", "T"), ("cb_ticker", "t_ms")):
+        extra, ext = [], {}
+        for nm, st, tc in (("by", "by_trade", "T"), ("cb", "cb_ticker", "t_ms")):
             try:
                 x = read(root, st, [tc, "price"]).dropna().sort_values(tc, kind="stable")
                 if len(x):
-                    extra.append((x[tc].values.astype(float), x.price.values.astype(float)))
+                    ext[nm] = (x[tc].values.astype(float), x.price.values.astype(float))
+                    extra.append(ext[nm])
             except Exception as ex:
                 print(f"{day}: {st} не прочитан: {ex!r}", flush=True)
+        btc = {"bnf": (bT, bP), **ext}
+        if use_sig:
+            r = read(root, "rtds", ["feed", "ts_ms", "value"])
+            r = r[r.feed == "cl"].dropna().sort_values("ts_ms", kind="stable") if not r.empty else r
+            if len(r):
+                btc["cl"] = (r.ts_ms.values.astype(float), r.value.values.astype(float))
+            del r
         dep, tr = DepthDay(root), Trades(root)
         wrows, agg, bad = [], {}, []
         ws = [w for w in sorted(winners) if w in pm.by_w]
@@ -356,7 +455,8 @@ def main():
                 win = Win(w, pm, tr, {})
                 if len(win.rt) < 10:
                     continue
-                P = Prep(win, dep, bT, bP, extra)
+                sig = window_signal(win, ptb[w], btc, trees) if use_sig and w in ptb else None
+                P = Prep(win, dep, bT, bP, extra, sig)
                 won = {"U": 1.0 if winners[w] == "Up" else 0.0, "D": 1.0 if winners[w] == "Down" else 0.0}
                 for v in vars_:
                     wrows.append(run_window(P, prms[v], won, day, v, agg))
@@ -365,8 +465,8 @@ def main():
         if bad:
             print(f"{day}: пропущено окон из-за ошибок {len(bad)}, первая: {bad[0]}", flush=True)
         W = pd.DataFrame(wrows)
-        A = pd.DataFrame([dict(day=day, var=k[0], tb=k[1], k=k[2], bb=k[3], pb=k[4], ft=k[5], ab=k[6], n=v[0], qty=v[1], out=v[2],
-                               m5=v[3], s5=v[4], m60=v[5], s60=v[6], reb=v[7]) for k, v in agg.items()])
+        A = pd.DataFrame([dict(day=day, var=k[0], tb=k[1], k=k[2], bb=k[3], pb=k[4], ft=k[5], ab=k[6], sb=k[7], st=k[8], n=v[0],
+                               qty=v[1], out=v[2], m5=v[3], s5=v[4], m60=v[5], s60=v[6], reb=v[7]) for k, v in agg.items()])
         W.to_csv(os.path.join(a.out, f"mmwin_{day}.csv.gz"), index=False)
         A.to_csv(os.path.join(a.out, f"mmagg_{day}.csv.gz"), index=False)
         if len(W):
