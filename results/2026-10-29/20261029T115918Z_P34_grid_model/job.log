@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/home/lab/poly/btc5m_lab/grid_model.py", line 23, in <module>
+    from scipy.stats import norm
+ModuleNotFoundError: No module named 'scipy'
