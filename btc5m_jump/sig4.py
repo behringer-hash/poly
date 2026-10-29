@@ -20,12 +20,13 @@ import asyncio
 import json
 import math
 import os
+import time
 from collections import deque
 from datetime import datetime
 
 import websockets
 
-from common import Quantiles, clock, emit, iter_ws, loads, log, window_start
+from common import LoopLag, Quantiles, clock, emit, iter_ws, loads, log, window_start
 from sig4_model import T0, T1, GridSeries, Trees, WinData, features_at, grid_t
 
 SIG4_SCHEMAS = {
@@ -358,6 +359,66 @@ class Sig4Trigger:
                  f"последние сделки: {ages} | сигналов {self.stats['signals']}, исполнено {tr.mstats['filled']} "
                  f"({tr.mstats['shares']:.0f} шт), PnL {tr.total_pnl:+.2f}$\033[0m")
 
+    # ------------------------------------------------------------------ состояние сервера (раз в минуту)
+    @staticmethod
+    def _host_counters():
+        """(всего тиков CPU, steal, свопинг in, свопинг out) из /proc; None - не Linux."""
+        try:
+            with open("/proc/stat") as f:
+                v = [int(x) for x in f.readline().split()[1:]]
+            sw = {}
+            with open("/proc/vmstat") as f:
+                for line in f:
+                    k, _, x = line.partition(" ")
+                    if k in ("pswpin", "pswpout"):
+                        sw[k] = int(x)
+            return sum(v[:8]), (v[7] if len(v) > 7 else 0), v[3] + (v[4] if len(v) > 4 else 0), sw.get("pswpin", 0), sw.get("pswpout", 0)
+        except (OSError, ValueError, IndexError):
+            return None
+
+    @staticmethod
+    def _mem_mb():
+        out = {}
+        try:
+            with open("/proc/self/status") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        out["rss"] = int(line.split()[1]) / 1024
+            with open("/proc/meminfo") as f:
+                m = {ln.split(":")[0]: int(ln.split()[1]) for ln in f if ln.split()}
+            out["avail"] = m.get("MemAvailable", 0) / 1024
+            out["swap"] = (m.get("SwapTotal", 0) - m.get("SwapFree", 0)) / 1024
+        except (OSError, ValueError, IndexError):
+            pass
+        return out
+
+    async def health_loop(self, every: float = 60.0):
+        """Раз в минуту: пауза event loop (p99/max), CPU процесса, steal (урезание процессора облаком), свопинг, память.
+        Пишется в sig4_feeds (event=health); при паузе от 300 мс - строка в консоль."""
+        lag = LoopLag()
+        lag_task = asyncio.create_task(lag.run(0.02))
+        try:
+            pt0, wt0, h0 = time.process_time(), time.monotonic(), self._host_counters()
+            while True:
+                await asyncio.sleep(every)
+                pt1, wt1, h1 = time.process_time(), time.monotonic(), self._host_counters()
+                _, p99, mx = lag.snapshot_reset()
+                d = dict(lag_p99=round(p99 or 0, 1), lag_max=round(mx, 1), cpu=round(100 * (pt1 - pt0) / max(wt1 - wt0, 1e-9), 1))
+                if h0 and h1 and h1[0] > h0[0]:
+                    tot = h1[0] - h0[0]
+                    d.update(steal=round(100 * (h1[1] - h0[1]) / tot, 1), busy=round(100 * (1 - (h1[2] - h0[2]) / tot), 1),
+                             swap_in=h1[3] - h0[3], swap_out=h1[4] - h0[4])
+                d.update({k: round(v) for k, v in self._mem_mb().items()})
+                self.health = d
+                self.w.write("sig4_feeds", (clock.now(), "host", "health", json.dumps(d)))
+                if mx >= 300:
+                    log("sig4", f"пауза программы {mx:.0f} мс за минуту: CPU процесса {d['cpu']}%, steal {d.get('steal', '?')}%, "
+                                f"загрузка {d.get('busy', '?')}%, подкачка in/out {d.get('swap_in', '?')}/{d.get('swap_out', '?')} стр., "
+                                f"память бота {d.get('rss', '?')} МБ, свободно {d.get('avail', '?')} МБ")
+                pt0, wt0, h0 = pt1, wt1, h1
+        finally:
+            lag_task.cancel()
+
     async def status_loop(self, every: float = 300.0):
         while True:
             await asyncio.sleep(every)
@@ -370,7 +431,15 @@ class Sig4Trigger:
                  f"заявка уже стоит {st['skip_open']}, неполная история окна {st['skip_history']}, пауза {st['skip_block']}, нет фьючерса {st['skip_feed']}, книга "
                  f"{st['skip_book']}; снятия: прогноз {st['cancel_keep']}, рынок ушёл {st['cancel_far']}, BTC против "
                  f"{st['cancel_adverse']} (ходов против {st['adverse']}); расчёт p50/p90 {self.calc.q(0.5) or 0:.1f}/"
-                 f"{self.calc.q(0.9) or 0:.1f} мс | " + " | ".join(parts) + X)
+                 f"{self.calc.q(0.9) or 0:.1f} мс | " + " | ".join(parts) + self._health_str() + X)
+
+    def _health_str(self) -> str:
+        h = getattr(self, "health", None)
+        if not h:
+            return ""
+        return (f" | сервер за минуту: пауза p99/max {h['lag_p99']}/{h['lag_max']} мс, CPU бота {h['cpu']}%, steal "
+                f"{h.get('steal', '?')}%, подкачка {h.get('swap_in', '?')}/{h.get('swap_out', '?')}, память {h.get('rss', '?')} МБ "
+                f"(свободно {h.get('avail', '?')})")
 
     def tasks(self):
         c = self.c
@@ -381,7 +450,7 @@ class Sig4Trigger:
             self._feed("cb", [c["sig4_url_coinbase"]],
                        json.dumps({"type": "subscribe", "product_ids": ["BTC-USD"], "channels": ["ticker"]}),
                        self.parse_coinbase, None),
-            self.tick_loop(), self.pulse_loop(), self.status_loop(),
+            self.tick_loop(), self.pulse_loop(), self.status_loop(), self.health_loop(),
         ]
 
 
