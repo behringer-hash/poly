@@ -10,7 +10,8 @@
   ex_ev           заявки тейкеров: server_ts, dir (+1 Up), o, side, p (цена Up), size, levels, кошелёк (10 знаков)
   ex_his          исполнения кошелька: роль T (тейкер, мс) / M (мейкер, время заявки тейкера) / P (только лента),
                   токен, сторона, цена токена, шейров, кошелёк контрагента
-  ex_btc          сетка 100 мс от T-20 до T+305 с: фьючерс Binance, Bybit, Coinbase, Chainlink (последняя цена)
+  ex_btc          сетка 100 мс от T-20 до T+305 с: фьючерс Binance (bnf; bfb - середина bookTicker), спот Binance (bn),
+                  Bybit, OKX (ok), Coinbase, Chainlink (последняя цена)
 """
 from __future__ import annotations
 
@@ -136,10 +137,20 @@ def main():
     save_parts(H.round(4), os.path.join(a.out, "ex_his"))
     # BTC на сетке 100 мс
     srcs = {"bnf": bnf.sort_values("T")}
-    for nm, st, tc, pc in (("by", "by_trade", "T", "price"), ("cb", "cb_ticker", "t_ms", "price")):
-        d = cat(a.roots, st, [tc, pc]).dropna()
+    for nm, st, tc, pc in (("by", "by_trade", "T", "price"), ("cb", "cb_ticker", "t_ms", "price"),
+                           ("bn", "bn_agg", "T", "price"), ("ok", "ok_trade", "T", "price")):
+        try:
+            d = cat(a.roots, st, [tc, pc]).dropna()
+        except Exception as ex:                                 # потока нет в этот день
+            print(f"{st}: {ex!r}", flush=True); continue
         if not d.empty:
             srcs[nm] = d.rename(columns={tc: "T", pc: "price"}).sort_values("T")
+    try:                                                        # середина лучших цен фьючерса (bookTicker, время биржи)
+        d = cat(a.roots, "bnf_book", ["T", "bid", "ask"]).dropna()
+        if not d.empty:
+            srcs["bfb"] = d.assign(price=(d.bid + d.ask) / 2)[["T", "price"]].sort_values("T")
+    except Exception as ex:
+        print(f"bnf_book: {ex!r}", flush=True)
     d = cat(a.roots, "rtds", ["feed", "ts_ms", "value"])
     if not d.empty:
         srcs["cl"] = d[d.feed == "cl"].rename(columns={"ts_ms": "T", "value": "price"}).sort_values("T")
