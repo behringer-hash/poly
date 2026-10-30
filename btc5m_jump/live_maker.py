@@ -293,6 +293,9 @@ class MakerTrader(LiveTrader):
                     r["oid"] = resp.get("orderID") or resp.get("orderId") or ""
                     r["err"] = resp.get("errorMsg") or ""
                     r["status"] = str(resp.get("status") or ("ok" if resp.get("success") else "error"))
+                    low = r["err"].lower()
+                    if not r["oid"] and (("post" in low and "only" in low) or "cross" in low):
+                        r["status"] = "rejected_cross"      # post-only пересекла бы спред: не ошибка, к стопу не ведёт
             except Exception as ex:
                 msg = str(getattr(ex, "error_msg", "") or ex)
                 low = msg.lower()

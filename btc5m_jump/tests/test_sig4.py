@@ -291,3 +291,19 @@ def test_one_order_per_side_active_ignores_cancelled():
             await asyncio.sleep(0.4)
         asyncio.run(go())
         assert t.mstats["signals"] - t.mstats["skipped"] == expect, mode
+
+
+def test_post_only_reject_without_exception_is_not_an_error():
+    """Отказ post-only (пересекла бы спред) ответом без исключения не считается ошибкой и не ведёт к стопу."""
+    cl = Client(matched="0")
+    cl.post_order = lambda order, ot, post_only=False: {"success": False, "errorMsg": "invalid post-only order: order crosses book",
+                                                         "orderID": ""}
+    t, win = trader("live", cl, maker_life_sec=0.2, max_consecutive_errors=2)
+
+    async def go():
+        for i in range(1, 5):
+            t.on_signal(msig(sid=i))
+            await asyncio.sleep(0.1)
+        await asyncio.sleep(0.3)
+    asyncio.run(go())
+    assert t.errors == 0 and not t.stopped_reason
