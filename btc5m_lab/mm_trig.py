@@ -40,7 +40,9 @@ PX_LO, PX_HI = 0.05, 0.95
 T_MIN, T_MAX = 12.0, 295.0
 REBATE = 0.2 * 0.07
 PROFILES = {"tokyo": dict(feed={"fut": 27.0, "spot": 19.0}, order=120.0, book_lag=130.0),
-            "stockholm": dict(feed=None, order=22.0, book_lag=None)}
+            "stockholm": dict(feed=None, order=22.0, book_lag=None),
+            # Ирландия (latency_probe 29.10): Binance фьючерс/спот p50 122/121 мс, книга 26 мс, заявка туда-обратно 31 мс
+            "ireland": dict(feed={"fut": 122.0, "spot": 121.0}, order=15.0, book_lag=26.0)}
 RULES = [("fair", 0.01), ("fair", 0.02), ("fair", 0.03), ("fair", 0.05), ("usd", 5.0), ("usd", 10.0), ("usd", 20.0)]
 WS = [50, 100, 200]
 T_ED, P_ED = [60, 120, 200], [0.2, 0.35, 0.5, 0.65, 0.8]
