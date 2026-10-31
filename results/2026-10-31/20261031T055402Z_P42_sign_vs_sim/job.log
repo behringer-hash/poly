@@ -1,0 +1,21 @@
+2026-10-30: окон 115, 36 с
+          окон    pnl  ребейт   шейров  заявок  снято_сигнал  ц_шейр
+var                                                                 
+R6_ie_v2   115  14.74    9.13  3087.42    2974           412    0.48
+31.10 до 05:00 UTC
+2026-10-31: окон 59, 13 с
+          окон    pnl  ребейт  шейров  заявок  снято_сигнал  ц_шейр
+var                                                                
+R6_ie_v2    59  23.67    1.99  695.69     696            23     3.4
+total 908
+drwxr-xr-x  2 lab lab   4096 Oct 31 05:54 .
+drwxr-xr-x 17 lab lab   4096 Oct 31 05:54 ..
+-rw-r--r--  1 lab lab    571 Oct 31 05:54 job.log
+-rw-r--r--  1 lab lab   5444 Oct 31 05:54 mmagg_2026-10-30.csv.gz
+-rw-r--r--  1 lab lab   1741 Oct 31 05:54 mmagg_2026-10-31.csv.gz
+-rw-r--r--  1 lab lab   2528 Oct 31 05:54 mmwin_2026-10-30.csv.gz
+-rw-r--r--  1 lab lab   1000 Oct 31 05:54 mmwin_2026-10-31.csv.gz
+-rw-r--r--  1 lab lab  42934 Oct 31 05:54 orders_2026-10-30.csv.gz
+-rw-r--r--  1 lab lab  10204 Oct 31 05:54 orders_2026-10-31.csv.gz
+-rw-r--r--  1 lab lab 628719 Oct 31 05:54 scores_2026-10-30.csv.gz
+-rw-r--r--  1 lab lab 205709 Oct 31 05:54 scores_2026-10-31.csv.gz
