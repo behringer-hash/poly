@@ -335,6 +335,9 @@ async def main_async(minutes):
         verdict = "ЗАКРЫТА - сервер ордеров отвечает 403"
     elif geo.get("blocked") is True and str(geo.get("country", "")).upper() in api_ok:
         verdict = "разрешена через API (сайт для этой страны закрыт - это ожидаемо, как в Японии)"
+    elif geo.get("blocked") is True and str(geo.get("country", "")).upper() == "GB":
+        verdict = ("закрыта по IP (Великобритания); кошельки из белого списка колокации Polymarket торговать могут - "
+                   "проверяется первой живой заявкой")
     elif geo.get("blocked") is True:
         verdict = "ЗАКРЫТА - этот регион не подходит"
     elif geo.get("blocked") is False and 401 in st:
