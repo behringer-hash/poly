@@ -113,6 +113,8 @@ VARIANTS = {
     "R3_ie_place100": dict(_S, SIG_TH=5.0, IMPROVE=True, FRESH=2.0, PX_MIN=0.10, ARR="IE", PLACE_MS=100.0),
     "R4_tyo": dict(_S, SIG_TH=5.0, IMPROVE=True, FRESH=2.0, PX_MIN=0.10, ARR="TYO", PLACE_MS=150.0),
     "R5_ie_nofresh": dict(_S, SIG_TH=5.0, IMPROVE=True, PX_MIN=0.10, ARR="IE"),
+    # R6: ровно правило бота в Ирландии (модель v2, задержки IE) - для сравнения с живыми заявками (добавлен 31.10)
+    "R6_ie_v2": dict(_S, SIG_TH=5.0, IMPROVE=True, FRESH=2.0, PX_MIN=0.10, ARR="IE", MODEL_FILE=MODEL_V2),
 }
 
 
