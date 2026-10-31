@@ -118,6 +118,9 @@ VARIANTS = {
 }
 
 
+ORDERS_DUMP: list = []                               # выгрузка заявок вариантов с DUMP (--dump-orders)
+
+
 def sig_key(prm: dict):
     """Ключ прогноза: модель; с задержками прихода - ещё место и время решения (признаки от них зависят)."""
     return (prm["MODEL_FILE"], prm["ARR"], prm["LAT_MS"]) if prm["ARR"] else prm["MODEL_FILE"]
@@ -232,6 +235,7 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
     OFFS, SIZE, LIMIT, MAXW = prm["OFFS"], prm["SIZE"], prm["LIMIT"], prm["MAXW"]
     maxoff = max(OFFS)
     PL = prm["PLACE_MS"]                              # заявка/отмена действует на сервере через PL мс
+    placed_all = []                                   # (сторона, заявка) - для выгрузки по заявкам (DUMP)
     orders = {"U": [], "D": []}
     qty, cost = {"U": 0.0, "D": 0.0}, {"U": 0.0, "D": 0.0}
     block = {"U": -INF, "D": -INF}
@@ -405,7 +409,9 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
                     fresh = (sUp[j] if X == "U" else sDn[j])
                     orders[X].append(dict(q=q, k=0, ta=ta, A=A, A0=A, rem=SIZE, dead=ta + prm["LIFE_MS"],
                                           S_prev=A if A < 1e8 else np.nan, traded=0.0, sc=sx,
-                                          st=int(np.isfinite(fresh) and fresh >= 2.0)))
+                                          st=int(np.isfinite(fresh) and fresh >= 2.0), t_dec=t, fr=fresh))
+                    if prm.get("DUMP"):
+                        placed_all.append((X, orders[X][-1]))
                     cnt["placed"] += 1
                     continue
                 if prm["MOM_MS"] > 0:
@@ -457,6 +463,13 @@ def run_window(P: Prep, prm: dict, won: dict, day: str, var: str, agg: dict):
                                           S_prev=A if A < 1e8 else np.nan, traded=0.0))
                     allow -= SIZE
                     cnt["placed"] += 1
+    for X, o in placed_all:
+        f = SIZE - o["rem"]
+        ORDERS_DUMP.append(dict(day=day, var=var, w=w, t_dec=round(o["t_dec"] / 1000.0 - w, 2), side=X, q=o["q"],
+                                A0=round(o["A0"], 2) if o["A0"] < 1e8 else -1, sc=round(o["sc"], 2),
+                                fresh=round(o["fr"], 2) if np.isfinite(o["fr"]) else np.nan, filled=round(f, 4),
+                                cx=int(bool(o.get("cx"))), life=round((o["dead"] - o["ta"]) / 1000.0, 3) if o["dead"] < INF else -1,
+                                won=won[X], pnl=round(f * (won[X] - o["q"]), 4), reb=round(REBATE * o["q"] * (1 - o["q"]) * f, 5)))
     pnl = qty["U"] * won["U"] + qty["D"] * won["D"] - cost["U"] - cost["D"]
     pairs = min(qty["U"], qty["D"])
     return dict(day=day, var=var, w=w, qU=qty["U"], cU=round(cost["U"], 4), qD=qty["D"], cD=round(cost["D"], 4),
@@ -470,10 +483,16 @@ def main():
     ap.add_argument("--variants", default=",".join(v for v in VARIANTS if v.startswith("A")))
     ap.add_argument("--max-windows", type=int, default=0)
     ap.add_argument("--model", default=MODEL)
+    ap.add_argument("--dump-orders", default="", help="варианты через запятую: выгрузить каждую заявку (orders_<день>.csv.gz)")
+    ap.add_argument("--dump-scores", default="", help="вариант: выгрузить прогноз (раз в секунду и |прогноз| >= 3 ц) в scores_<день>.csv.gz")
+    ap.add_argument("--w-from", type=float, default=0.0, help="только окна с началом >= (unix, с)")
+    ap.add_argument("--w-to", type=float, default=0.0, help="только окна с началом < (unix, с)")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     vars_ = [v for v in a.variants.split(",") if v in VARIANTS]
     prms = {v: {**BASE, **VARIANTS[v]} for v in vars_}
+    for v in [x for x in a.dump_orders.split(",") if x in prms]:
+        prms[v]["DUMP"] = True
     for v in list(vars_):
         if prms[v]["SIG"]:
             prms[v]["MODEL_FILE"] = prms[v]["MODEL_FILE"] or a.model
@@ -538,7 +557,9 @@ def main():
             del r
         dep, tr = DepthDay(root), Trades(root)
         wrows, agg, bad = [], {}, []
-        ws = [w for w in sorted(winners) if w in pm.by_w]
+        ws = [w for w in sorted(winners) if w in pm.by_w and w >= a.w_from and (not a.w_to or w < a.w_to)]
+        ORDERS_DUMP.clear()
+        score_rows = []
         if a.max_windows:
             ws = ws[:a.max_windows]
         for w in ws:
@@ -559,6 +580,13 @@ def main():
                         else:
                             sig[sig_key(pv)] = window_signal(win, ptb[w], btc, trees[pv["MODEL_FILE"]])
                 P = Prep(win, dep, bT, bP, extra, sig, arr)
+                if a.dump_scores in prms and sig.get(sig_key(prms[a.dump_scores])) is not None:
+                    sT, sP, sU, sD = sig[sig_key(prms[a.dump_scores])]
+                    tt = np.round(sT / 1000.0 - w, 1)
+                    keep = (np.abs(sP) >= 3.0) | (np.abs(tt - np.round(tt)) < 1e-6)
+                    for i in np.flatnonzero(keep & np.isfinite(sP)):
+                        score_rows.append((w, tt[i], round(float(sP[i]), 3), round(float(sU[i]), 2) if np.isfinite(sU[i]) else np.nan,
+                                           round(float(sD[i]), 2) if np.isfinite(sD[i]) else np.nan))
                 won = {"U": 1.0 if winners[w] == "Up" else 0.0, "D": 1.0 if winners[w] == "Down" else 0.0}
                 for v in vars_:
                     wrows.append(run_window(P, prms[v], won, day, v, agg))
@@ -570,6 +598,10 @@ def main():
         A = pd.DataFrame([dict(day=day, var=k[0], tb=k[1], k=k[2], bb=k[3], pb=k[4], ft=k[5], ab=k[6], sb=k[7], st=k[8], n=v[0],
                                qty=v[1], out=v[2], m5=v[3], s5=v[4], m60=v[5], s60=v[6], reb=v[7]) for k, v in agg.items()])
         W.to_csv(os.path.join(a.out, f"mmwin_{day}.csv.gz"), index=False)
+        if ORDERS_DUMP:
+            pd.DataFrame(ORDERS_DUMP).to_csv(os.path.join(a.out, f"orders_{day}.csv.gz"), index=False)
+        if score_rows:
+            pd.DataFrame(score_rows, columns=["w", "t", "score", "up", "dn"]).to_csv(os.path.join(a.out, f"scores_{day}.csv.gz"), index=False)
         A.to_csv(os.path.join(a.out, f"mmagg_{day}.csv.gz"), index=False)
         if len(W):
             W["sh"] = W.qU + W.qD
