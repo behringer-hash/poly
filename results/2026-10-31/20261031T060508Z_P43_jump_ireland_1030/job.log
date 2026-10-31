@@ -1,0 +1,16 @@
+                   weak    8993  2173  353  331.6
+             resp  strong  3024   788  106   82.9
+                   weak    8993  2205  311  349.2
+                   weak    1201  273  60  68.8
+             resp  strong   657  162  36  46.4
+                   weak    1201  276  51  63.9
+total 56
+drwxr-xr-x  2 lab lab  4096 Oct 31 06:05 .
+drwxr-xr-x 18 lab lab  4096 Oct 31 06:05 ..
+-rw-r--r--  1 lab lab   291 Oct 31 06:05 job.log
+-rw-r--r--  1 lab lab 13552 Oct 31 06:05 t11_2026-10-30.csv.gz
+-rw-r--r--  1 lab lab  7258 Oct 31 06:05 t11_2026-10-31.csv.gz
+-rw-r--r--  1 lab lab  4145 Oct 31 06:05 t11h_2026-10-30.csv.gz
+-rw-r--r--  1 lab lab  1120 Oct 31 06:05 t11h_2026-10-31.csv.gz
+-rw-r--r--  1 lab lab  3917 Oct 31 06:05 t11o_2026-10-30.csv.gz
+-rw-r--r--  1 lab lab  1686 Oct 31 06:05 t11o_2026-10-31.csv.gz
